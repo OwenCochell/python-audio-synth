@@ -1,2 +1,2 @@
 # python-audio-synth
-A work in progress mono synth written in python
+A work in progress modular mono synth written in python
