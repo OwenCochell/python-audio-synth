@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pysynth.utils import BaseModule, AudioCollection, get_time
 from pysynth.output.modules import BaseOutput
+from pysynth.osc import ZeroOscillator
 
 
 class OutputControl(BaseModule):
@@ -53,11 +54,12 @@ class OutputControl(BaseModule):
     when you bind a synth to the OutputHandler.
     """
 
-    def __init__(self, out):
+    OUT = []  # Reference to OutputHandler
+
+    def __init__(self):
 
         super(OutputControl, self).__init__()
 
-        self.out = out  # instance of the OutputHandler
         self.time_remove = 0  # Time to remove ourselves. If 0, then we don't keep track
         self.item_written = 0  # Number of items to write. If 0, then we don't keep track
 
@@ -79,7 +81,7 @@ class OutputControl(BaseModule):
 
         # Remove ourselves from the OutputHandler:
 
-        self.out._remove_synth(self)
+        self.OUT[0]._remove_synth(self)
 
         self.time_remove = 0
         self.item_written = 0
@@ -96,6 +98,7 @@ class OutputControl(BaseModule):
 
         # Lets see if we should remove ourselves:
 
+        '''
         if self.time_remove != 0 and self.time_remove > get_time():
 
             # >Time< to remove ourselves! Our >Time< is up!
@@ -111,6 +114,8 @@ class OutputControl(BaseModule):
             self.stop()
 
             return
+
+        '''
 
         # Otherwise, lets just return!
 
@@ -172,7 +177,7 @@ class OutputControl(BaseModule):
 
         # Add ourselves to the OutputHandler:
 
-        self.out._add_synth(self)
+        self.OUT[0]._add_synth(self)
 
         # Return ourselves:
 
@@ -213,12 +218,15 @@ class OutputHandler:
         self._input = AudioCollection()  # Audio Collection to mix sound
         self.rate = rate  # Rate to output audio
         self.futures = []
+        self.thread = []
         self.barrier = None  # Instance of the barrier class
 
         self.run = False  # Value determining if we are running
         self._pause = threading.Event()  # Event object determining if we are paused
 
         self._pause.set()
+
+        self._input.add_module(ZeroOscillator())
 
     def add_output(self, out):
 
@@ -279,7 +287,8 @@ class OutputHandler:
 
         # Create an output control:
 
-        out = OutputControl(self)
+        out = OutputControl()
+        out.OUT.append(self)
 
         # Bind the synth to the output control:
 
@@ -395,7 +404,7 @@ class OutputHandler:
 
             # Get some audio information:
 
-            inp = next(self._input)
+            inp = int(next(self._input) * 32767)
 
             if inp is None:
 
@@ -469,7 +478,11 @@ class OutputHandler:
 
         # Add it to the collection:
 
-        self._work.submit(mod.run)
+        #self._work.submit(mod.run)
+
+        thread = threading.Thread(target=mod.run)
+        thread.start()
+        self.thread.append(thread)
 
     def _stop_module(self, mod):
 

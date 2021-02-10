@@ -40,9 +40,9 @@ class BaseOscillator(BaseModule):
         :rtype: float
         """
 
-        self.index += 1
-
         val = self.get_next()
+
+        self.index += 1
 
         return val
 
@@ -137,6 +137,12 @@ class SawToothOscillator(BaseOscillator):
         :return: Next value in the SawTooth wave
         :rtype: float
         """
+
+        if self.index == 0:
+
+            # Zero, lets return zero:
+
+            return 0
 
         return -(2 / math.pi) * math.atan(1 / math.tan(self.val_calc()))
 

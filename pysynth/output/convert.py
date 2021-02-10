@@ -10,7 +10,7 @@ Because of this,
 output handlers can optionally specify a converter.
 All information received will be automatically converted by the converters.
 
-Your module can use these converters, so they don't have to.
+Your module can use these converters, so they don't have to convert values themselves.
 """
 
 import struct
@@ -90,5 +90,36 @@ class FloatToByte(BaseConverter):
         """
 
         # Convert and return:
+
+        return self.struct.pack(inp)
+
+
+class IntToByte(BaseConverter):
+
+    """
+    Converts signed ints into bytes!
+
+    Like FloatToByte, you can specify a the byte order,
+    the default being little-endian.
+
+    :param big: Determines if we use big endian
+    :type big: bool
+    """
+
+    def __init__(self, big=False):
+
+        self.char = ('>' if big else '<') + 'h'  # Prefix char, working with ints is specified byte order
+        self.struct = struct.Struct(self.char)  # optimised struct class
+
+    def convert(self, inp):
+
+        """
+        Converts the signed ints into bytes!
+
+        :param inp: Input of ints
+        :type inp: int
+        :return: Int in bytes
+        :rtype: bytearray
+        """
 
         return self.struct.pack(inp)

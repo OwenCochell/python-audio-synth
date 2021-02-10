@@ -30,7 +30,8 @@ to auto-configure the sequencer for a particular use case?
 If the user wishes to add a standard, then they can configure the sequencer manually.
 """
 
-from typing import NamedTuple
+
+from dataclasses import dataclass
 from math import pow, log
 from copy import deepcopy
 
@@ -46,7 +47,49 @@ class BaseInput(object):
     Ideally, we will make communication with the decoder very simple.
     """
 
-    pass
+    def __init__(self):
+
+        self.seq = None  # instance of the sequencer
+        self.decoder = None  # instance of the decoder
+        self.running = False  # Value determining if we are running
+
+    def start(self):
+
+        """
+        Function called when the input module is started.
+
+        The input module is started when the Sequencer is started,
+        and before the control thread is started.
+
+        You can put any setup code here to prepare your input module.
+        """
+
+        pass
+
+    def stop(self):
+
+        """
+        Function called when this input module is stopped.
+
+        The input module is stopped when the Sequencer is stopped,
+        and before the control thread is stopped.
+
+        You can put any shutdown code in here to stop your input module.
+        """
+
+        pass
+
+    def run(self):
+
+        """
+        Main run method of the input module.
+
+        Ideally, we will continuously get our input from somewhere,
+        and then pass it onto the decode() method of the decoder,
+        which will then pass instructions onto the sequencer.
+        """
+
+        raise NotImplementedError("Must be implemented in child class!")
 
 
 class BaseDecoder(object):
@@ -59,12 +102,67 @@ class BaseDecoder(object):
 
     Probably won't be much more than getting items from a queue,
     and then calling the sequencer.
+
+    As of now, we are synchronous,
+    meaning that we operate in one control thread.
+    The input module calls us, we interpret, we call the sequencer.
+    This may change with time, so watch out!
+
+    We purposely keep this class ambiguous,
+    as decoding could have many different styles and configurations.
     """
 
-    pass
+    def __init__(self):
+
+        self.seq = None  # Instance of the sequencer
+        self.input = None  # Instance of the input module
+        self.running = False  # Value determining if we are running
+
+    def start(self):
+
+        """
+        Function called when this decoder is started.
+
+        The decoder is started when the Sequencer is started,
+        and before the control thread is started.
+
+        You can put any setup code here to prepare your decoder.
+        """
+
+        pass
+
+    def stop(self):
+
+        """
+        Function called when this decoder is stopped.
+
+        The decoder is stopped when the Sequencer is stopped,
+        and before the control thread is stopped.
+
+        You can put any shutdown code in here to stop your decoder.
+        """
+
+        pass
+
+    def decode(self, *args, **kwargs):
+
+        """
+        The main decoder method!
+
+        All inputs from the Input module will be sent here for decoding.
+
+        As of now, we utilise a synchronous model for sequencer decoding,
+        meaning that only one thread is used, and queues are not used.
+
+        This means that all input will be sent here, in whatever format is agreed upon
+        between modules.
+        """
+
+        raise NotImplementedError("Must be implemented in child class!")
 
 
-class Note(NamedTuple('Note')):
+@dataclass
+class Note:
 
     """
     We represent a Musical Note.
@@ -96,6 +194,8 @@ class Note(NamedTuple('Note')):
 
     octave: int
     step: int
+
+    __slots__ = ("octave", "step")
 
     def freq_conv(self, middle_pitch=440.0):
 
@@ -151,7 +251,7 @@ class Note(NamedTuple('Note')):
 
         # Convert the number and return it:
 
-        return int(num / 12), 12 % num
+        return int(num / 12), num % (12 if num > 0 else -12)
 
     def revert(self):
 
@@ -204,6 +304,51 @@ class Note(NamedTuple('Note')):
 
         return cls(octv, step)
 
+    @classmethod
+    def from_num(cls, num):
+
+        """
+        Creates a Note object from a number of steps away from A.
+
+        Under the hood, we convert the number into pysynth notation,
+        and then create an instance with those values
+
+        :param num: Number to use when creating
+        :type num: int
+        :return: Note object representing the inputted number
+        :rtype: Note
+        """
+
+        # Get converted values:
+
+        octave, step = cls.convert(num)
+
+        # Return:
+
+        return cls(octave, step)
+
+    def __eq__(self, other):
+
+        """
+        Ensures equality between two note objects.
+
+        We check to make sure the values of the
+        given Note is equal to ours.
+
+        :param other: Note object to compare
+        :type other: Note
+        :return: True for equal to, False for not equal to
+        :rtype: bool
+        """
+
+        # Check to make sure we are working with Notes:
+
+        assert isinstance(other, Note), Exception("Can only compare Notes to Notes!")
+
+        # Check if we are true:
+
+        return self.octave == other.octave and self.step == other.step
+
 
 class Sequencer(object):
 
@@ -248,7 +393,45 @@ class Sequencer(object):
         self._decoder = None  # Decoder module - Decodes our info
         self._on = {}  # Dictionary of synths and their notes that are on
 
+        self.thread = None  # Control thread instance
+        self.default_name = 'default'  # Name to be used if no name is specified
         self.middle = middle_freq  # Middle frequency to use when decoding note numbers
+
+    def start(self):
+
+        """
+        Starts the sequencer, control thread, and bound modules.
+        """
+
+        # Starts the decoder module first:
+
+        self._decoder.running = True
+        self._decoder.start()
+
+        # Start the input module:
+
+        self._input.running = True
+        self._input.start()
+
+        # Start the run method in the input:
+
+        self._input.run()
+
+    def stop(self):
+
+        """
+        Stops the sequencer, control thread, and bound modules.
+        """
+
+        # Stop the input module:
+
+        self._input.running = False
+        self._input.stop()
+
+        # Stop the decoder module:
+
+        self._decoder.running = False
+        self._decoder.stop()
 
     def bind_input(self, inp):
 
@@ -269,6 +452,19 @@ class Sequencer(object):
 
         self._input = inp
 
+        # Lets give them relevant information:
+
+        inp.seq = self
+        inp.decoder = self._decoder
+
+        # Lets give our decoder relevant information:
+
+        if self._decoder is not None:
+
+            # Add ourselves to the decoder:
+
+            self._decoder.input = inp
+
     def bind_decoder(self, dec):
 
         """
@@ -288,7 +484,20 @@ class Sequencer(object):
 
         self._decoder = dec
 
-    def add_synth(self, name, synth, notes=None):
+        # Lets add some relevant information:
+
+        dec.seq = self
+        dec.input = self._input
+
+        # Add ourselves to the input module:
+
+        if self._input is not None:
+
+            # Add ourselves to the input module:
+
+            self._input.decoder = dec
+
+    def add_synth(self, synth, name=None, notes=None):
 
         """
         Adds the given synth(Or synth collection) to the sequencer.
@@ -310,13 +519,19 @@ class Sequencer(object):
         You can treat these names as different kinds of instruments.
         Any wrappers(Such as MIDI or MML) will auto-configure these names for you.
 
-        :param name: name of the synth to add
-        :type name: str
         :param synth: Synth instance to add
         :type: iter
+        :param name: name of the synth to add
+        :type name: str, int
         :param notes: Musical notes to register the synth under
         :type notes: None, list
         """
+
+        if name is None:
+
+            # Lets set the default name:
+
+            name = self.default_name
 
         # Determine if the name is in our collection:
 
@@ -325,6 +540,7 @@ class Sequencer(object):
             # Add the name to the collection:
 
             self._synths[name] = {}
+            self._on[name] = []
 
         if notes is not None:
 
@@ -334,7 +550,13 @@ class Sequencer(object):
 
                 # Add the synth as the note:
 
-                self._synths[name][note] = deepcopy(synth)
+                temp_synth = deepcopy(synth)
+
+                # Set the oscillating frequency:
+
+                temp_synth.freq = note.freq_conv(middle_pitch=self.middle)
+
+                self._synths[name][note.revert()] = temp_synth
 
         else:
 
@@ -359,7 +581,17 @@ class Sequencer(object):
         :param name: Name of the synth to turn on
         """
 
-        pass
+        # Lets find our synth:
+
+        synth = self._find_synth(note, name=name)
+
+        # Add the synth note to the output:
+
+        self._on[self._resolve_name(name)].append(note.revert())
+
+        # Start the synth:
+
+        synth.start()
 
     def stop_note(self, note, name=None):
 
@@ -376,7 +608,43 @@ class Sequencer(object):
         :param name: Name os the synth to stop
         """
 
-        pass
+        # Resolve the values:
+
+        name = self._resolve_name(name)
+
+        synth = self._find_synth(note, name)
+
+        note_value = note.revert()
+
+        if note_value not in self._on[name]:
+
+            # Note is not currently on!
+
+            raise Exception("Note is not currently on!")
+
+        # Stop the synth:
+
+        synth.stop()
+
+        # Remove it from output:
+
+        self._on[name].remove(note_value)
+
+    def stop_all(self):
+
+        """
+        Stops all synths that are currently started.
+        """
+
+        # Iterate over the outputting synths:
+
+        for name in self._on:
+
+            for synth_num in self._on[name]:
+
+                # Stop the synth:
+
+                self.stop_note(Note.from_num(synth_num))
 
     def get_state(self, note, name=None):
 
@@ -384,7 +652,7 @@ class Sequencer(object):
         Gets the state of a note with the specified name.
 
         We return True if the note is on,
-        and False if the note if off.
+        and False if the note is off.
 
         :param note: Note to get the state of
         :type note: Note
@@ -393,4 +661,109 @@ class Sequencer(object):
         :rtype: bool
         """
 
-        pass
+        # Resolve the name:
+
+        name = self._resolve_name(name)
+
+        # Check if not value is present in output
+
+        return note.revert() in self._on[name]
+
+    def _resolve_name(self, name):
+
+        """
+        Takes the given name and resolves it.
+
+        If the name exists and is valid,
+        then we simply return it.
+
+        If the name is None,
+        then we return the first name registered.
+
+        If the name is invalid and does not exist,
+        then we raise an exception.
+
+        :param name: Name to be found
+        :type name: str
+        :return: Resolved name
+        :rtype: str
+        """
+
+        # Determine if the synth is None:
+
+        if name is None:
+
+            # Simply return the first name:
+
+            return list(self._synths.keys())[0]
+
+        # Determine if name does not exist:
+
+        if name not in self._synths.keys():
+
+            # Raise an exception!
+
+            raise Exception("Name not valid!")
+
+        # Otherwise, return the name as usual:
+
+        return name
+
+    def _find_synth(self, note, name=None):
+
+        """
+        Finds a synth by the given note and name.
+
+        If a name is not specified, then we simply use the first registered name.
+
+        If no note is found in the name,
+        then a new one is created from the default synth via 'deepcopy'.
+
+        :param note: Noe of the synth to start
+        :type note: Note
+        :param name: Name of the synth collection to start
+        :type name: str
+        :return: Synth at that position
+        :rtype: BaseModule
+        """
+
+        # Resolve the name:
+
+        name = self._resolve_name(name)
+
+        # Get the synth at the given note
+
+        note_val = note.revert()
+        synth = None
+
+        if note_val in self._synths[name].keys():
+
+            # Found our synth, let's grab it!
+
+            synth = self._synths[name][note_val]
+
+        else:
+
+            # Not present, let's make a copy of the default synth:
+
+            if 'd' not in self._synths[name].keys():
+
+                # Default synth not present!
+
+                raise Exception("Default Synth not present!")
+
+            # Lets make a deep copy of the default:
+
+            synth = deepcopy(self._synths[name]['d'])
+
+            # Lets set the oscillating frequency:
+
+            synth.freq = note.freq_conv(middle_pitch=self.middle)
+
+            # Lets register it to the given note:
+
+            self._synths[name][note_val] = synth
+
+        # Synth has been found or registered!
+
+        return synth

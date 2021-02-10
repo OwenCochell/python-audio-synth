@@ -26,10 +26,8 @@ Here are some audio modules I would like to see later:
 import queue
 import wave
 import pathlib
-import struct
 
-from pysynth.output.convert import BaseConverter, FloatToByte, NullConvert
-from pysynth.utils import get_time
+from pysynth.output.convert import BaseConverter, FloatToByte, NullConvert, IntToByte
 
 
 class BaseOutput(object):
@@ -66,6 +64,7 @@ class BaseOutput(object):
         self.convert = NullConvert()  # Converter instance
         self.running = False  # Value determining if we are running
         self.out = None  # Reference to master OutputHandler class
+        self.special = False
 
     def add_converter(self, conv):
 
@@ -117,14 +116,7 @@ class BaseOutput(object):
 
         # Check the barrier:
 
-        #val = self.out.barrier.wait(timeout=timeout)
-        val = 0
-
-        # Check if we should request another value:
-
-        if val == 0:
-
-            # Lets generate a new value:
+        if self.special:
 
             self.out.gen_value()
 
@@ -133,8 +125,6 @@ class BaseOutput(object):
         inp = self.queue.get(timeout=timeout)
 
         # We are done processing!
-
-        self.queue.task_done()
 
         if inp is None:
 
@@ -160,7 +150,7 @@ class BaseOutput(object):
         Gets a number of inputs from the input queue,
         and returns them in a tuple.
 
-        Under the hood we cll 'get_input()' a number of times,
+        Under the hood we call 'get_input()' a number of times,
         and return all the inputs as a tuple.
 
         Again, when we are stopped, 'None' is added to our audio queue.
@@ -392,7 +382,8 @@ class WaveModule(BaseOutput):
 
         # Add a float to byte converter:
 
-        self.add_converter(FloatToByte())
+        #self.add_converter(FloatToByte())
+        self.add_converter(IntToByte())
 
     def start(self):
 
@@ -414,7 +405,7 @@ class WaveModule(BaseOutput):
 
         # Set the sample width:
 
-        self.file.setsampwidth(4)
+        self.file.setsampwidth(2)
 
         # Set frame rate:
 
@@ -446,15 +437,11 @@ class WaveModule(BaseOutput):
 
             # Get a certain number of frames:
 
-            #start = get_time()
-
             frames = self.get_added_inputs(self.frames_per_buffer)
-
-            #print("Wave time: {}".format(get_time() - start))
 
             # Output them to the wave file:
 
-            self.file.writeframesraw(frames)
+            self.file.writeframes(frames)
 
 
 class PyAudioModule(BaseOutput):
@@ -500,7 +487,7 @@ class PyAudioModule(BaseOutput):
 
         self.device = device  # Device to output to
         self.frames_per_buffer = frames_per_buffer  # Number of frames per write
-        self.format = pyaudio.paFloat32  # Format to output audio
+        self.format = pyaudio.paInt16  # Format to output audio
 
         self.pyaudio = pyaudio.PyAudio()  # PyAudio instance
         self.stream = None  # Instance of our stream. Created upon start
@@ -508,6 +495,7 @@ class PyAudioModule(BaseOutput):
         # Lets add a FloatToByte converter:
 
         #self.add_converter(FloatToByte())
+        self.add_converter(IntToByte())
 
     def start(self):
 
@@ -547,20 +535,20 @@ class PyAudioModule(BaseOutput):
 
             #print("PyCalling")
 
-            start = get_time()
+            #start = get_time()
 
-            #frames = self.get_added_inputs(self.frames_per_buffer)
+            frames = self.get_added_inputs(self.frames_per_buffer + 1000)
 
-            print("Frame time Py: {}".format(get_time()-start))
+            #print("Frame time Py: {}".format(get_time()-start))
 
             # Send them to PyAudio
 
             #start = get_time()
 
-            frame = self.get_input()
+            #frame = self.get_input()
 
-            self.stream.write(struct.pack('f', frame))
+            #self.stream.write(struct.pack('f', frame))
 
-            #self.stream.write(frames)
+            self.stream.write(frames)
 
             #print("Time py: {}".format(get_time()-start))

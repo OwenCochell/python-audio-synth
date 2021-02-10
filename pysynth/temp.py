@@ -8,6 +8,7 @@ from pysynth.synth import *
 from pysynth.filters import *
 from pysynth.output.base import OutputHandler
 from pysynth.output.modules import *
+from pysynth.wrappers import querty
 
 import time
 import pyaudio
@@ -16,6 +17,7 @@ import struct
 import wave
 import math
 import os
+import copy
 
 from tkinter import Tk, Frame
 
@@ -195,7 +197,7 @@ def gen_oscs(osc):
     return oscs
 
 
-def keyboard_input():
+def old_keyboard_input():
 
     """
     Maps certain keys to a keyboard,
@@ -209,6 +211,7 @@ def keyboard_input():
     # Create AudioCollection for output
 
     collec = AudioCollection()
+    collec.add_module(ZeroOscillator())
 
     # Create KeyBoardHandler:
 
@@ -233,16 +236,6 @@ def keyboard_input():
     root.mainloop()
 
     os.system("xset r on")
-
-
-    # Creating PyInput Data:
-
-    '''
-    with Listener(on_press=hand.add_key,
-                  on_release=hand.remove_key) as listener:
-
-        listener.join()
-    '''
 
 
 def pitch_comp(osc):
@@ -336,6 +329,76 @@ def fm_test():
     start_stream(twomain)
 
 
+def keyboard_input():
+
+    # Tests the QUERTY sequencer, and the QUERTYKeyboard input module.
+
+    # Create the QWERTY wrapper
+
+    sequencer = querty.QWERTYWrapper()
+
+    # Create the output handler:
+
+    out = OutputHandler()
+    pyaudo = PyAudioModule()
+    pyaudo.special = True
+    out.add_output(pyaudo)
+
+    #out.add_output(WaveModule("test_seq.wav"))
+
+    # Configure for keyboard:
+
+    sequencer.load_keyboard()
+
+    # Get controller for sine wave oscillator:
+
+    sine = out.bind_synth(SineOscillator(440.0))
+    square = out.bind_synth(SquareOscillator(440.0))
+    saw = out.bind_synth(SawToothOscillator(440.0))
+    tri = out.bind_synth(TriangleOscillator(440.0))
+
+    # Add sine oscillator for default instrument:
+
+    sequencer.add_synth(sine, name=0)
+    sequencer.add_synth(square, name=1)
+    sequencer.add_synth(saw, name=2)
+    sequencer.add_synth(tri, name=3)
+
+    # Start the output handler:
+
+    out.start()
+
+    # Start the sequencer:
+
+    sequencer.start()
+    sequencer.stop()
+    out.stop()
+
+
+def deepcopy():
+
+    # Tests the deep copy of synths
+
+    # OutputHandler:
+
+    out = OutputHandler()
+
+    # PyAudio module:
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+
+    out.add_output(pyaud)
+
+    osc = SineOscillator(freq=440.0)
+
+    final = out.bind_synth(osc)
+
+    # Make a deep copy:
+
+    thing = copy.deepcopy(final)
+
+
 def test_output():
 
     # Creates and registers a oscillator. Used for testing output.
@@ -347,13 +410,16 @@ def test_output():
 
     out = OutputHandler()
 
+    out.add_output(WaveModule("test.wav"))
+
     # Add the PyAudio module:
 
-    out.add_output(PyAudioModule())
+    pyaud = PyAudioModule()
+    pyaud.special = True
+
+    out.add_output(pyaud)
 
     # Add the WaveModule:
-
-    out.add_output(WaveModule("test.wav"))
 
     # Bind the synth:
 

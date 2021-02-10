@@ -591,7 +591,9 @@ class AudioCollection:
 
         # Done, return the result:
 
-        return amp_clamp(final)
+        return final
+
+        #return amp_clamp(final)
 
 
 class AudioBuffer(deque):
