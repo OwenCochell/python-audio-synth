@@ -404,7 +404,9 @@ class OutputHandler:
 
             # Get some audio information:
 
-            inp = int(next(self._input) * 32767)
+            #inp = int(next(self._input) * 32767)
+
+            inp = next(self._input)
 
             if inp is None:
 

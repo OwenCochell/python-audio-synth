@@ -487,15 +487,16 @@ class PyAudioModule(BaseOutput):
 
         self.device = device  # Device to output to
         self.frames_per_buffer = frames_per_buffer  # Number of frames per write
-        self.format = pyaudio.paInt16  # Format to output audio
+        #self.format = pyaudio.paInt16  # Format to output audio
+        self.format = pyaudio.paFloat32
 
         self.pyaudio = pyaudio.PyAudio()  # PyAudio instance
         self.stream = None  # Instance of our stream. Created upon start
 
         # Lets add a FloatToByte converter:
 
-        #self.add_converter(FloatToByte())
-        self.add_converter(IntToByte())
+        self.add_converter(FloatToByte())
+        #self.add_converter(IntToByte())
 
     def start(self):
 

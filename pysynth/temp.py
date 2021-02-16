@@ -8,7 +8,7 @@ from pysynth.synth import *
 from pysynth.filters import *
 from pysynth.output.base import OutputHandler
 from pysynth.output.modules import *
-from pysynth.wrappers import querty
+from pysynth.wrappers import querty, mml
 
 import time
 import pyaudio
@@ -372,6 +372,57 @@ def keyboard_input():
 
     sequencer.start()
     sequencer.stop()
+    out.stop()
+
+
+def freq_conv(num, middle_pitch=440.0):
+
+    # Calculate and return the frequency of the note:
+
+    return middle_pitch * pow(2, (((num) / 12)))
+
+
+def mml_test():
+
+    # Tests the MML wrapper
+
+    #song = 't120 o4 l4 e f+ b > c+ d < f+ e > c+ < b f+ > d c+ <e f+ b > c+ d < f+ e > c+ < b f+ > d c+'
+    #song = 'o4 cdefgab>c'
+
+    #song = "o4 l1 ca"
+
+    #song = "t60 l4 o4 [ceg] [fac]1"
+
+    song = "t92 l8 o4 [>cg<cea]2. [>cg<ceg]4 [>>a<a<c+fa+]2. [>>a <a <c+ e a]4 " \
+           "[>>f <f g+ <c g]2. [>>f <f g+ <c f]4 [>>g <g g+ b <g+]2." \
+           "[>>g <g <g]4 o3 l32 v6 cdef v8 ga v10 b<c v12 de v14 fg"
+
+    #song = "t92 l4 o4 [>>a<a<c+fa+]"
+
+    sec = mml.MMLWrapper()
+
+    sec.load_string(song)
+
+    osc = TriangleOscillator(freq=440.0)
+
+    out = OutputHandler()
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+    out.add_output(pyaud)
+
+    cont = out.bind_synth(osc)
+
+    sec.add_synth(cont)
+
+    # Start output handler:
+
+    out.start()
+
+    # Start the sequencer:
+
+    sec.start()
+    sec.stop()
     out.stop()
 
 

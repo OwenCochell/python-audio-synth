@@ -118,6 +118,9 @@ class BaseDecoder(object):
         self.input = None  # Instance of the input module
         self.running = False  # Value determining if we are running
 
+        self.tempo = 0  # Tempo in beats per minute
+        self.beats_per_measure = 4  # Used to determine the amount of beats per measure
+
     def start(self):
 
         """
@@ -143,6 +146,69 @@ class BaseDecoder(object):
         """
 
         pass
+
+    def find_time_type(self, note_type):
+
+        """
+        Finds the amount of time the note will take given it's note type,
+        beats per measure, and tempo.
+
+        We use 'find_beats()' to determine the amount of beats the note ype takes up.
+
+        Once we have determined the number of beats this note takes up,
+        we will then multiply the value by the beats per second,
+        which we can calculate using the beats per minute.
+
+        We then return the amount of time, in seconds, a note will take.
+
+        :param note_type: Type of note to calculate rest time for
+        :type note_type: float
+        :return: Number of seconds we must sleep for
+        :rtype: float
+        """
+
+        # Find the number of beats this note type takes up:
+
+        beats = self.find_beats(note_type)
+
+        # Multiply this by the time per beat and return:
+
+        return beats * (1 / (self.tempo / 60))
+
+    def find_beats(self, note_type):
+
+        """
+        Finds the amounts of beats the given note represents, given the beats per bar,
+        and tempo.
+
+        The note_type represents the fraction of the note compared to he bpb.
+        If the bpm is 4, then 1 represents 1 beat, 2 represents 2 beats, 3 represents 4/3 beats, ect.
+        In normal note notation, a 1 is a whole note, 2 is half note, 4 is quarter note, 8 is eight note, ect.
+
+        We also support fractions of notes,
+        meaning that if you provide 2.5, then we will interpret this note as a dotted half note.
+        After we determine the number of beats the note represents,
+        we multiply the number of beats by this decimal, and add it to the total.
+        So if we have 4 BPB, the tempo is 60 BPM, and we provide 4.5,
+        then we will rest for 1.5 seconds.
+
+        :param note_type: Type of not to calculate number of beats for
+        :type note_type: float
+        :return: Number of beats this note represents
+        :rtype: float
+        """
+
+        # First, find the number of beats this value takes up:
+
+        beats = self.beats_per_measure / int(note_type)
+
+        # Next, add the amount of fraction beats to this value:
+
+        beats = beats + (beats * (note_type % 1))
+
+        # Return
+
+        return beats
 
     def decode(self, *args, **kwargs):
 
