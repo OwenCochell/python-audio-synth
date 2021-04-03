@@ -2,6 +2,7 @@
 Random test stuff
 """
 
+from pysynth.seq import Sequencer
 from pysynth.utils import *
 from pysynth.osc import *
 from pysynth.synth import *
@@ -37,13 +38,21 @@ def type_test():
     # Tests the audio type test
 
     audio = AudioValue(500.0, 0, 1000)
-    audio.add_event(ExponentialRamp, 800.0, get_time()+10)
-    audio.add_event(LinearRamp, 900.0, get_time()+20)
+    audio.add_event(ExponentialRamp, 800.0, get_time()+10000000000)
+    audio.add_event(LinearRamp, 500.0, get_time()+20000000000)
+
+    #audio.add_event(ExponentialRamp, 800.0, get_time()+10)
+    #audio.add_event(LinearRamp, 500.0, get_time()+20)
 
     while True:
 
-        print(audio.value)
-        #time.sleep(1)
+        thing = audio.value
+
+        if thing == 500.0:
+
+            break
+
+        time.sleep(0.01)
 
 
 def start_stream(osc):
@@ -371,6 +380,7 @@ def keyboard_input():
     # Start the sequencer:
 
     sequencer.start()
+    sequencer.join()
     sequencer.stop()
     out.stop()
 
@@ -382,34 +392,78 @@ def freq_conv(num, middle_pitch=440.0):
     return middle_pitch * pow(2, (((num) / 12)))
 
 
+def mixing_test():
+
+    # Tests mixing operations:
+
+    pass
+
+
 def mml_test():
 
     # Tests the MML wrapper
 
-    #song = 't120 o4 l4 e f+ b > c+ d < f+ e > c+ < b f+ > d c+ <e f+ b > c+ d < f+ e > c+ < b f+ > d c+'
-    #song = 'o4 cdefgab>c'
+    #song = '$ t120 o4 l4 e f+ b > c+ d < f+ e > c+ < b f+ > d c+ <e f+ b > c+ d < f+ e > c+ < b f+ > d c+'
+    #song = '$o4 c r e r g r b r;$o4 r d r f r a r <c'
+    #song = 'o4 c d e f g a b <c d'
 
     #song = "o4 l1 ca"
 
-    #song = "t60 l4 o4 [ceg] [fac]1"
+    #song = "t60 l4 o4 /: [ceg] [fac]1 :/4"
 
-    song = "t92 l8 o4 [>cg<cea]2. [>cg<ceg]4 [>>a<a<c+fa+]2. [>>a <a <c+ e a]4 " \
-           "[>>f <f g+ <c g]2. [>>f <f g+ <c f]4 [>>g <g g+ b <g+]2." \
-           "[>>g <g <g]4 o3 l32 v6 cdef v8 ga v10 b<c v12 de v14 fg"
+    #song = "t92 l8 o4 [>cg<cea]2. [>cg<ceg]4 [>>a<a<c+fa+]2. [>>a<a<c+ea]4 " \
+    #       "[>>f<fg+<cg]2. [>>f<fg+<cf]4 [>>g<gg+b<g+]2." \
+    #       "[>>g<g<g]4 o3 l32 v6 cdef ga b<c de fg"
 
     #song = "t92 l4 o4 [>>a<a<c+fa+]"
+    #song = 'o3 l32 v6 cdefgab<cdefg'
+    #song = 't30 a'
+    #song = "t92 [>>f<fg+<cg]2. [>>f<fg+<cf]4 [>>g<gg+b<g+]2. [>>g<g<g]4 o3 t92 l32 v6 cdef ga b<c de fg"
+    #song = 't60 [>>g<g<g]4'
+
+    #song = 't60 o3 l4 cdefgab<c> l8 cdefgab<c> l16 cdefgab l32 cdefgab'
+
+    song = "t92 l8 o4 $ [>cg<cea]2. [>cg<ceg]4 [>>a<a<c+fa+]2. [>>a<a<c+ea]4 " \
+           "[>>f<fg+<cg]2. [>>f<fg+<cf]4 [>>g<gg+b<g+]2. r4; " \
+           "t92 $ l1 o3 v12 r r r r2 r8 l32 v6 cdef ga b<c de fg;"
+
+    song = "t60 l4 o4 a+ r a+;" \
+           "t60 l4 o4 r  r >a+"
+
+    song = "t120$l8 o3 >g+2.. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c4. >d+ a+ g+2. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c2." 
+
+    song = "t120$l8 o3 >g+2.. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c4. >d+ a+ g+2. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c2." 
+
+    song = 't60 l1 a r8 a. r8 a.. r8 a...'
+
+
+    song = "t120$l8 o4 rr g  g4  g+ a+4  d4  d4  d+2 d  c   g   g4 g+   a+4 d4 d4 d+2 rr g g4 g+ a+4 d4 d4 d+2 d c g g4 g+ a+4 d4 d4 d+2.;" \
+           "t120$l8 o4 rr d+ d+2 r  >a+4 a+4 <c2 >a+ g+ <d+ d+2 r  >a+4 a+4 a+2 rr d+ d+2 r >a+4 a+4 <c2 >a+ g+ <d+ d+2 r >a+4 a+4 a+2.;" \
+           "t120$l8 o4 rr c  c2  r  >f4  f4  g2  a+  g+ <c  c2 >f  f4   r   f g2< rr c c2 r >f4 f4 g2 a+ g+ <c c2 >f f4 r f g2.<;" \
+           "t120$l8 o3 >g+2.. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c4. >d+ a+ g+2. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <r2." \
 
     sec = mml.MMLWrapper()
 
     sec.load_string(song)
 
-    osc = TriangleOscillator(freq=440.0)
+    # --== Instrument Selection: ==--
+    # Uncomment the instrument you want to use!
+
+    #osc = SineOscillator(freq=440.0)
+    #osc = SquareOscillator(freq=440.0)
+    osc = SawToothOscillator(freq=440.0)
+    #osc = TriangleOscillator(freq=440.0)
+
+    # --== End Instrument Selection! ==--
 
     out = OutputHandler()
 
     pyaud = PyAudioModule()
     pyaud.special = True
     out.add_output(pyaud)
+
+    wave = WaveModule('saw_test.wav')
+    out.add_output(wave)
 
     cont = out.bind_synth(osc)
 
@@ -422,7 +476,41 @@ def mml_test():
     # Start the sequencer:
 
     sec.start()
+    sec.join()
+
+    print("Done joining")
+
+    print("Stopping sequencer...")
+
     sec.stop()
+
+    print("Stopping output...")
+
+    out.stop()
+
+
+def delay():
+
+    # Tests the delay function of OutputControl
+
+    osc = TriangleOscillator(freq=440.0)
+
+    out = OutputHandler()
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+    out.add_output(pyaud)
+
+    cont = out.bind_synth(osc)
+
+    out.start()
+
+    cont.start(time=3000000000 + get_time())
+
+    cont.stop(time=5000000000 + get_time())
+
+    time.sleep(8)
+
     out.stop()
 
 
@@ -448,6 +536,43 @@ def deepcopy():
     # Make a deep copy:
 
     thing = copy.deepcopy(final)
+
+
+def audio_param():
+
+    # Tests the audio parameter as it alters the frequency of the pitch
+
+    # Create a simple sine oscillator:
+
+    osc = SineOscillator(freq=440)
+
+    out = OutputHandler()
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+    out.add_output(pyaud)
+
+    sine = out.bind_synth(osc)
+
+    out.start()
+
+    # Start the oscillator:
+
+    sine.start()
+
+    # Have the frequency go up to 550 in 5 seconds:
+
+    sine.info.freq.exponential_ramp(550.0, get_time()+5000000000)
+
+    time.sleep(5)
+
+    # Have the frequency go back down to 440 in 10 seconds:
+
+    sine.info.freq.linear_ramp(440.0, get_time()+60000000000)
+
+    sine.join()
+
+    out.stop()
 
 
 def test_output():
@@ -509,3 +634,150 @@ def test_output():
     final.stop()
 
     out.stop()
+
+
+def module_connection():
+
+    # Tests the connectivity features of modules
+
+    mod1 = SineOscillator(freq=640.0)
+    mod2 = DummyModule()
+    mod3 = DummyModule()
+    mod4 = DummyModule()
+
+    mod2.bind(mod1)
+    mod3.bind(mod2)
+    mod4.bind(mod3)
+
+    print("Connected modules: {}".format(mod4.info.connected))
+    print("Should be 4!")
+
+    print("Chain frequency: {}".format(mod4.info.freq))
+    print("Should be 640.0!")
+
+
+class DummyWait(BaseModule):
+
+    """
+    Passes values from the inputs attached,
+    but continues to play for 5 seconds after we are released.
+    """
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.finishing = False
+        self.wait = 5000000000
+        self.start_time = 0
+
+    def start(self):
+        
+        self.finishing = False
+        self.wait = 5000000000
+        self.start_time = 0
+
+    def finish(self):
+
+        print("Dummy module finishing...")
+
+        self.finishing = True
+
+        self.start_time = get_time()
+
+        print("Starting time: {}".format(self.start_time))
+
+    def get_next(self):
+        
+        # Check if we are finishing
+
+        if self.finishing:
+
+            if get_time() > self.start_time + self.wait:
+
+                # We are done, lets say we are finished:
+
+                print("Dummy module done!")
+                print("Current time: {}".format(get_time()))
+                print("Target time: {}".format(self.start_time + self.wait))
+
+                self.done()
+
+                return None
+
+        # Otherwise, lets just return the input:
+
+        return self.get_input()
+
+
+def fade_test():
+
+    # Tests the ability for synths to continue to play after they have been stopped
+
+    out = OutputHandler()
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+    out.add_output(pyaud)
+
+    osc = TriangleOscillator(freq=440.0)
+
+    dummy = DummyWait()
+
+    dummy.bind(osc)
+
+    cont = out.bind_synth(dummy)
+
+    sec = Sequencer()
+    sec.add_synth(cont)
+
+    print(cont.info.connected)
+    print(cont.info.done)
+
+    out.start()
+
+    print("Starting controller...")
+
+    cont.start()
+
+    print("Waiting...")
+
+    time.sleep(5)
+
+    print("Stopping controller...")
+
+    cont.stop()
+
+    time.sleep(5)
+
+    print(("Waiting..."))
+
+    time.sleep(5)
+
+    print("Synth should be stopped!")
+
+    print("Starting synth...")
+
+    cont.start()
+
+    print("Waiting...")
+
+    time.sleep(5)
+
+    print("Stopping cont...")
+
+    cont.stop()
+
+    print("Waiting three seconds to inturrupt...")
+
+    time.sleep(3)
+
+    print("Interrupting!")
+
+    cont.start()
+
+    cont.stop()
+
+    print("Finished!")
+
+    #sec.start()

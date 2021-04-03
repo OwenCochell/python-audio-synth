@@ -122,4 +122,4 @@ class IntToByte(BaseConverter):
         :rtype: bytearray
         """
 
-        return self.struct.pack(inp)
+        return self.struct.pack(int(inp * 32767))

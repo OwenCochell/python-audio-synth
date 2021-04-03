@@ -15,13 +15,15 @@ def get_time():
 
     We use the most accurate clock available and we return the time in nanoseconds.
 
-    Great for event calculations.
+    This will be the timer used by all components,
+    including the parameter events, the sequencer, and the OutputControl modules.
 
     :return: Time in nano seconds
     :rtype: float
     """
 
-    return time.perf_counter()
+    return time.perf_counter_ns()
+    #return time.perf_counter()
 
 
 def amp_clamp(val):
@@ -66,14 +68,14 @@ class BaseModule(object):
     osc -> LP_filt(200) -> asdr(0.2, 0.5, 0.7, 1) -> out
 
     In this example, an oscillator is attached to a filter,
-    which is attached to an asdr envelope, with is then sent to output.
+    which is attached to an asdr envelope, which is then sent to output.
 
     This class handles modules receiving inputs, traversing the synth,
     starting the synth, and stopping the synth.
     We also keep track of certain attributes, like the frequency of this synth chain,
     as well as the sampling rate of this synth chain.
 
-    Most of these features will be utilised by the sequencer,
+    Most of these features will be utilized by the sequencer,
     like for changing the frequency of the oscillator(s),
     and for stopping and starting components.
 
@@ -117,6 +119,34 @@ class BaseModule(object):
 
         pass
 
+    def finish(self):
+
+        """
+        Function called when this module is told to finish up whatever they are doing.
+
+        This is called when the chain we are attached to is told to stop.
+        This feature allows us to continue to add audio information when we are stopped,
+        i.e we implemented a fade out when the note is stopped.
+
+        THIS WILL PROBABLY ONLY BE CALLED BY AN OutputControl INSTANCE!
+        OutputControl is designed to stop us nicely and gracefully,
+        so if we are not managed by an OutputControl instance,
+        then we probably won't be asked when we are ready to stop.
+
+        Point is, your module should not rely on being asked to stop!
+        If this module is stopped without being asked,
+        then it should simply stop and not cause trouble. 
+
+        When this module is ready to stop, 
+        it should call the 'done()' method to dentoe that it is complete.
+        By default, we include a call to 'done()' here,
+        as most modules do not have special functionality when stopped.
+        """ 
+
+        # Call the 'done()' method if not overloaded:
+
+        self.done()
+
     def get_next(self):
 
         """
@@ -127,17 +157,22 @@ class BaseModule(object):
 
         We only understand floats, and if something else is returned,
         then their is a very high chance that their will be trouble.
-        A module must only other types if they understand what is receiving them!
+        A module must only return other types if they understand what is receiving them!
 
         Most likely, a module's math operations will go here,
         but they don't have too if it makes more sense to put them elsewhere.
+
+        If a module returns 'None', then AudioCollection
+        will skip this module in the sampling.
+        Modules should return None if they are not ready to return samples,
+        or if their state has changed and they are not ready to return samples at this time.
 
         :return: Next value from this item
         :rtype: float
         :raise: NotImplemented: If this class is not overridden
         """
 
-        raise NotImplemented("This method should be overridden in the child class!")
+        raise NotImplementedError("This method should be overridden in the child class!")
 
     def get_input(self):
 
@@ -200,6 +235,22 @@ class BaseModule(object):
 
         return tuple(final)
 
+    def done(self):
+
+        """
+        Method called when this module is ready to stop.
+
+        The finishing process is described in more detail in the 'finish()' method.
+
+        When this module is ready to stop,
+        then it should call the 'done()' method,
+        which will tell the chain that this module is ready to stop.
+        """
+
+        # Add one to the 'done' parameter in info:
+
+        self.info.done += 1
+
     def bind(self, module):
 
         """
@@ -214,17 +265,31 @@ class BaseModule(object):
         :type module: iter
         """
 
-        # Add the iterable to the AudioCollection:
+        # Determine if we already have modules attached to us:
 
-        self.input.add_module(module)
+        if self.input._objs:
 
-        # Add their info to us:
+            # Already have modules attached, update this new one:
 
-        self._info = module._info
+            module._info = self._info
+
+        else:
+
+            # Add their info to us:
+
+            self._info = module._info
 
         # Add ourselves to the output:
 
         module.output = self
+
+        # Add the iterable to the AudioCollection:
+
+        self.input.add_module(module)
+
+        # Update the number of modules connected:
+
+        self.info.connected += 1
 
     def unbind(self, module):
 
@@ -237,10 +302,6 @@ class BaseModule(object):
         :type module: iter
         """
 
-        # Remove the module from the AudioCollection:
-
-        self.input.add_module(module)
-
         # Unregister info:
 
         module.info = ModuleInfo()
@@ -248,6 +309,14 @@ class BaseModule(object):
         # Remove ourselves from the output:
 
         module.output = None
+
+        # Remove the module from the AudioCollection:
+
+        self.input.add_module(module)
+
+        # Update the number of modules connected to us:
+
+        self.info.connected -= 1
 
     def traverse_link(self):
 
@@ -380,6 +449,54 @@ class BaseModule(object):
 
             link.info = self._info
 
+    def stop_module(self):
+
+        """
+        Meta stop method - Called by other modules when this chain is stopping.
+
+        We do a few things here:
+
+            - Set our 'started' value to False
+            - Call out 'stop' method
+            - Tell our AudioCollection to stop all input modules
+
+        This is usually called by OutputControl when this chain is stopped,
+        but it can also be called by the module itself so it can be removed.
+        """
+
+        # Set our started value:
+
+        self.started = False
+
+        # Call our stop method:
+
+        self.stop()
+
+        # Stop all input modules:
+
+        self.input.stop_modules()
+
+    def finish_module(self):
+
+        """
+        Meta finish method - Called by other modules when this chain is finishing.
+
+        We do a few things here:
+
+            - Call our 'finish()' method
+            - Tell AudioCollection to finish all input modules
+
+        This is called when the module is asked to finish up it's work.
+        """
+
+        # Call our 'finish()' method:
+
+        self.finish()
+
+        # Tell all input modules to finish:
+
+        self.input.finish_modules()
+
     def __iter__(self):
 
         """
@@ -391,9 +508,10 @@ class BaseModule(object):
             - Call our start method
             - Tell our AudioCollection to prepare all input modules
             - Set our 'started' attribute to True
+            - Set the 'done' value to 0
 
         This allows us to start all sub-modules in the synth chain.
-        This utilises some form of recursion,
+        This utilizes some form of recursion,
         as all modules will call sub-modules to start their own components.
 
         :return: This module
@@ -415,6 +533,10 @@ class BaseModule(object):
         # Set our started value:
 
         self.started = True
+
+        # Set our 'done' value:
+
+        self.info.done = 0
 
         # Return ourselves:
 
@@ -448,7 +570,7 @@ class ModuleInfo:
     we simply provide a 'ModuleInfo' to each module as it's added to the link.
 
     This allows us to save time when updating the module info,
-    as we only need to change one 'ModuleInfo' instance to change the values of eveything.
+    as we only need to change one 'ModuleInfo' instance to change the values of everything.
 
     Each module creates it's own 'ModuleInfo' instance,
     but it gets overridden when connected to another module.
@@ -456,10 +578,34 @@ class ModuleInfo:
 
     def __init__(self, freq=440.0, samp=44100.0):
 
-        self.__slots__ = ['freq', 'samp']  # Slots to to optimise for storage
+        self.__slots__ = ['freq', 'samp', 'running', 'connected', 'done']  # Slots to to optimise for storage
 
         self.freq = AudioValue(freq, 0, samp)  # AudioValue representing the frequency
         self.rate = samp   # Sampling rate of this synth
+        self.running = True  # Value determining if we are running
+        self.connected = 1  # Number of modules connected to this instance
+        self.done = 0  # Number of modules that have reported that they are ready to stop
+
+
+class DummyModule(BaseModule):
+
+    """
+    Dummy Module - Does nothing but return values from the things attached to us!
+
+    This might continue to live here,
+    or it might be moved somewhere else.
+    """
+
+    def get_next(self):
+
+        """
+        Returns the values from the module bound to us.
+
+        :return: Audio info from modules bound to us
+        :rtype: float
+        """
+
+        return self.get_input()
 
 
 class AudioCollection:
@@ -517,6 +663,36 @@ class AudioCollection:
 
             iter(mod)
 
+    def stop_modules(self):
+
+        """
+        Stops all attached modules.
+        We call 'stop_module()' and let them do the rest.
+        """
+
+        # Iterate over our modules:
+
+        for mod in self._objs:
+
+            # Stop the module:
+
+            mod.stop_module()
+
+    def finish_modules(self):
+
+        """
+        Tells all attached modules to finish up.
+        We call 'finish_module()' and let them do the rest.
+        """
+
+        # Iterate over our modules:
+
+        for mod in self._objs:
+
+            # Stop the module:
+
+            mod.finish_module()
+
     def remove_module(self, node):
 
         """
@@ -530,7 +706,7 @@ class AudioCollection:
     def traverse_link(self):
 
         """
-        Iterates over our bound nodes, and yield them.
+        Iterates over our bound nodes, and yields them.
 
         We utilise recursion to iterate over the links.
         Once we encounter None, the we are done.
@@ -568,7 +744,8 @@ class AudioCollection:
         """
         Gets values from each node and returns it.
 
-        :return: Synthesised values from each node
+        :return: Synthesized values from each node
+        :rtype: float
         """
 
         if not self._objs:
@@ -578,6 +755,7 @@ class AudioCollection:
             return None
 
         final = 0
+        num_synths = len(self._objs)
 
         for obj in self._objs:
 
@@ -585,15 +763,21 @@ class AudioCollection:
 
             temp = next(obj)
 
+            if temp is None:
+
+                # Synth is not ready, continue and do not include it:
+
+                num_synths -= 1
+
+                continue
+
             # Compute the value
 
-            final = final + temp * 1 / len(self._objs)
+            final = final + temp
 
         # Done, return the result:
 
-        return final
-
-        #return amp_clamp(final)
+        return final * (1 / num_synths if num_synths != 0 else 1)
 
 
 class AudioBuffer(deque):
@@ -602,7 +786,7 @@ class AudioBuffer(deque):
     Holds a collection of audio signals of a pre-determined length.
     We inherit the python deque object, and add/overload methods when necessary.
 
-    Allows for returning of all samples in the queue at once s a list,
+    Allows for returning of all samples in the queue at once as a list,
     or allows for getting the start or end values of the buffer.
 
     We keep track of our inputs, and make sure they don't get out of sync.
@@ -809,6 +993,8 @@ class AudioValue:
 
                 # Instantiate it:
 
+                print("Creating value")
+
                 self._events[0] = self.start_event(self._events[0])
 
             # Let's see if the time is valid
@@ -816,6 +1002,8 @@ class AudioValue:
             if get_time() >= self._events[0].time_end > 0.0:
 
                 # Value is done, let's remove it:
+
+                print("Removing value")
 
                 self._value = self._events.pop(0).value_target
 
@@ -826,6 +1014,8 @@ class AudioValue:
                 self._value = self._events[0].comp()
 
         # Return our value:
+
+        #print("Value: {}".format(self._value))
 
         return self._value
 
@@ -960,6 +1150,15 @@ class ExponentialRamp(BaseEvent):
     Event that exponentially ramps the value to the target over a time period.
     """
 
+    def __init__(self, time_s, time_e, value_s, value_t):
+
+        super().__init__(time_s, time_e, value_s, value_t)
+
+        # Pre-compute some common values:
+
+        self.val_div = self.value_target / self.value_start
+        self.time_dif = self.time_end - self.time_start
+
     def comp(self):
 
         """
@@ -981,8 +1180,8 @@ class ExponentialRamp(BaseEvent):
 
         # Do the calculation and return the value
 
-        return self.value_start * (self.value_target / self.value_start) ** \
-            ((get_time() - self.time_start) / (self.time_end - self.time_start))
+        return self.value_start * (self.val_div) ** \
+               ((get_time() - self.time_start) / (self.time_dif))
 
 
 class SetValue(BaseEvent):
@@ -1012,6 +1211,15 @@ class LinearRamp(BaseEvent):
     Event that linearly ramps the value to the target value.
     """
 
+    def __init__(self, time_s, time_e, value_s, value_t):
+
+        super().__init__(time_s, time_e, value_s, value_t)
+
+        # Pre-compute some common values:
+
+        self.val_diff = self.value_target - self.value_start
+        self.time_diff = self.time_end - self.time_start
+
     def comp(self):
 
         """
@@ -1031,8 +1239,8 @@ class LinearRamp(BaseEvent):
         :rtype: float
         """
 
-        return self.value_start + (self.value_target - self.value_start) ** ((get_time() - self.time_start) /
-                                                                             (self.time_end - self.time_start))
+        return self.value_start + (self.val_diff) * ((get_time() - self.time_start) /
+                                                    (self.time_diff))
 
 
 class OscillatorEvent(BaseEvent):

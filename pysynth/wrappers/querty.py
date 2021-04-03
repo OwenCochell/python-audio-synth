@@ -1,7 +1,7 @@
 """
 Sequencer wrapper for QWERTY keyboard input.
 
-We allow the synth to be played via string infomration,
+We allow the synth to be played via string information,
 with sources being live keyboard input, text files, and more!
 
 We utilise the current default control scheme:
@@ -66,6 +66,9 @@ class QWERTYKeyboard(BaseInput):
         self.frame.bind("<KeyRelease>", self.decoder.key_released)
         self.frame.pack()
 
+        self.frame.focus_set()
+        self.root.mainloop()
+
     def stop(self):
 
         """
@@ -93,8 +96,7 @@ class QWERTYKeyboard(BaseInput):
         We start the TKinter thread, and ensure that it is configured correctly.
         """
 
-        self.frame.focus_set()
-        self.root.mainloop()
+        pass
 
 
 class QWERTYDecoder(BaseDecoder):
@@ -270,3 +272,7 @@ class QWERTYWrapper(Sequencer):
         # Load QWERTYKeyboard:
 
         self.bind_input(QWERTYKeyboard())
+
+        # Create one track:
+
+        self.set_tracks(1)

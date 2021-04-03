@@ -16,13 +16,15 @@ The input system simply grabs information form somewhere and sends it to the dec
 Their might be multiple input modules, and their implementations might differ per platform.
 
 The decoder will take the inputted information and put into a format that we can understand.
-(This is probably going to call methods on the sequencer to change the synth values).
+A decoder can simply call the functions of the sequencer to invoke the notes,
+or it can generate a SeqCommand chain,
+that the sequencer will accept and act upon.
 
-Each sequencer will have to be in it's own thread,
-as the input module may block for information,
-and we don't want to affect our sound.
+The sequencer will generate a pair of input/decoder modules,
+each running in their own thread,
+based upon the number of tracks we have.
 
-The best organisation for different music standards(MIDI, MML)
+The best organization for different music standards(MIDI, MML)
 is probably to keep these standards in their own sub-folders in this directory.
 Perhaps each subdirectory will have a setup feature,
 to auto-configure the sequencer for a particular use case?
@@ -34,6 +36,12 @@ If the user wishes to add a standard, then they can configure the sequencer manu
 from dataclasses import dataclass
 from math import pow, log
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
+from pysynth.utils import BaseEvent, get_time
+
+import time
+import threading
+import multiprocessing
 
 
 class BaseInput(object):
@@ -153,7 +161,7 @@ class BaseDecoder(object):
         Finds the amount of time the note will take given it's note type,
         beats per measure, and tempo.
 
-        We use 'find_beats()' to determine the amount of beats the note ype takes up.
+        We use 'find_beats()' to determine the amount of beats the note type takes up.
 
         Once we have determined the number of beats this note takes up,
         we will then multiply the value by the beats per second,
@@ -163,7 +171,7 @@ class BaseDecoder(object):
 
         :param note_type: Type of note to calculate rest time for
         :type note_type: float
-        :return: Number of seconds we must sleep for
+        :return: Number of nanoseconds we must sleep for
         :rtype: float
         """
 
@@ -171,9 +179,9 @@ class BaseDecoder(object):
 
         beats = self.find_beats(note_type)
 
-        # Multiply this by the time per beat and return:
+        # Multiply this by the time per beat, convert to nanoseconds, and return:
 
-        return beats * (1 / (self.tempo / 60))
+        return (beats * (1 / (self.tempo / 60))) * 1000000000
 
     def find_beats(self, note_type):
 
@@ -416,6 +424,728 @@ class Note:
         return self.octave == other.octave and self.step == other.step
 
 
+class BaseCommand(object):
+
+    """
+    BaseCommand - Parent class all commands should inherit.
+
+    Each command should do a certain operation,
+    such as toggling a note, sleeping, changing tempo, ect.
+
+    We also keep information on the time this event will start,
+    and the time this event will end.
+    This allows the SeqCommand to keep new events in time.
+    """
+
+    def __init__(self, name=None, legnth=0) -> None:
+        
+        self.time_start = 0  # Time this event will start, in nanoseconds
+        self.time_stop = 0  # Time this event will stop, in nanoseconds
+        self.length = legnth  #  Length of this event in nanoseconds
+        self.name = name
+
+    def _bind(self, com, seq):
+
+        """
+        Binds the sequencer command instance,
+        and sequencer instances to this object.
+
+        This is called upon adding the event.
+
+        :param com: SeqCommand instance we are attached to
+        :type com: SeqCommand
+        :param seq: Sequencer instance we are controlling
+        :type seq: Sequencer
+        """
+
+        # Bind our items:
+
+        self.seq = seq
+        self.seq_com = com
+
+        if self.name is None:
+
+            # Update the name with the default name:
+
+            self.name = self.seq_com.name
+
+    def _set_start(self, start):
+
+        """
+        Sets the starting time for this object.
+
+        We also take this opportunity to calculate
+        the absolute stop time using the legnth. 
+        """
+
+        # Start time of this event:
+
+        self.time_start = start
+
+        # Stop time of this event:
+
+        self.time_stop = start + self.length
+
+    def run(self):
+
+        """
+        Main run method, all your logic should reside here!
+
+        This is the function that SeqCommand will invoke when running,
+        and where this event should do it's operations.
+
+        We accept no parameters, they should have been passed upon instantiation.
+        """
+
+        raise NotImplementedError("Must be overridden in child class!")
+
+
+class NoteOn(BaseCommand):
+
+    """
+    We handle toggling notes on.
+
+    We will keep the notes on indefinitely,
+    unless we are provided with a length,
+    which we will wait for the time and kill the note.
+
+    If a name is not provided, 
+    then we will use the default name attached to the SeqCommand. 
+
+    :param start: Start time of the note
+    :type start: int
+    :param note: Note instance of the note to start
+    :type note: Note
+    :param length: Length of the note
+    :type length: float
+    :param name: Name of the instrument
+    :type name: int, str
+    """
+
+    def __init__(self, note, length=0, name=None):
+
+        super().__init__(name=name, legnth=length)
+
+        self.note = note  # Note to turn on
+
+    def run(self):
+
+        """
+        We toggle the given note to be on.
+
+        If length is not given, then the note will not be stopped.
+        """
+
+        # Toggle the note:
+
+        print("Starting note: {}".format(self.note))
+
+        self.seq.start_note(self.note, name=self.name, time_start=self.time_start + self.seq_com.offset, 
+        time_stop=self.time_stop + self.seq_com.offset)
+
+        return
+
+
+class NoteOff(BaseCommand):
+
+    """
+    We handle toggling notes off.
+
+    We will turn the note off immediately if a length is not specified.
+    If a length is specified, then we will wait the time before stopping the note.
+
+    :param note: Note instance of the note to stop
+    :type note: Note
+    :param length: Time to wait before stopping the note
+    :type length: float
+    :param name: Name of the instrument to stop
+    :type name: int, str
+    """
+
+    def __init__(self, note, length=0, name=None):
+
+        super().__init__(name=name, legnth=length)
+
+        self.note = note  # Note instance to stop
+
+    def run(self):
+
+        """
+        We toggle the given note to off.
+        """
+
+        # Turn the note off:
+
+        self.seq.stop_note(self.note, name=self.name, time_stop=self.time_stop)
+
+
+class Chord(BaseCommand):
+
+    """
+    We represent a chord,
+    multiple notes that are on at the same time
+    for a time period.
+    """
+
+    def __init__(self, notes, length, name=None):
+
+        super().__init__(name=name, legnth=length)
+
+        self.notes = list(notes)  # Number of notes to toggle
+
+    def run(self):
+
+        """
+        We toggle the notes in the chord on
+        for the given length.
+        """
+
+        for note in self.notes:
+
+            # Toggle the note to on:
+
+            self.seq.start_note(note, name=self.name, time_start=self.time_start + self.seq_com.offset, 
+            time_stop=self.time_stop + self.seq_com.offset)
+
+
+class Rest(BaseCommand):
+
+    """
+    We act as a rest,
+    stopping the execution of commands for a period of time.
+
+    Great for putting pauses in the music.
+
+    :param length: Time to sleep for
+    :type length: float
+    """
+
+    def __init__(self, length):
+
+        super().__init__(legnth=length)
+
+    def run(self):
+
+        """
+        We do nothing, our presence is enough.
+        """
+
+        pass
+
+
+class Repeat(BaseCommand):
+
+    """
+    We change our index back to a certain location,
+    emulating repeats in a song.
+
+    We can repeat a certain number of times,
+    or indignantly.
+
+    :param pos: Position to repeat back to
+    :type pos: int
+    :param num: Number of times to repeat, -1 for indefinitely
+    :type num: int
+    """
+
+    def __init__(self, pos, num=-1):
+
+        super().__init__()
+
+        self.pos = pos  # Position to move back to
+        self.num = num  # Number of times to repeat
+
+    def run(self):
+
+        print("Checking repeat...")
+
+        # Check if we should stop repeating:
+
+        if self.num == 0:
+
+            # Stop repeating
+
+            return
+
+        # Otherwise, subtract from num:
+
+        self.num -= 1
+
+        # Move our index back to the given position:
+
+        print("Setting index to : {}".format(self.pos))
+
+        self.seq_com.index = self.pos
+
+        # Set the offset time to now:
+
+        self.seq_com.offset += self.time_stop
+
+        print("New offset: {}".format(self.seq_com.offset))
+
+
+class SeqCommand:
+
+    """
+    Sequencer Command - Easy to use sequencer event programming.
+
+    We allow for the programming and scheduling of sequencer events.
+    We are best used in a situation where we are reading musical events from somewhere,
+    NOT in a live environment.
+
+    Decoders can program us with events for the sequencer to execute.
+    We are then passed along to the sequencer and the events are executed.
+    This prevents decoding latency, and allows us to keep events and tracks synchronized.
+
+    We offer convenience methods for common musical events, such as toggling notes,
+    resting, looping, tempo changes, and chords.
+    All of this functionality is provided via methods that add and configure the necessary events.
+    These convenience methods also keep the timing accurate,
+    so the decoder does not have to do any time calculations.
+    If the decoder wants to add events based on time without the help of convenience methods,
+    then they can certainly do so. 
+
+    We also keep time statisticsand offer some time operations,
+    so the Sequencer's job it a bit easier.
+
+    ALL TIME OPERATIONS MUST BE IN NANO SECONDS!
+
+    This is what the sequencer understands, and it is what the sequencers to use to determine timing.
+    """
+
+    def __init__(self, seq) -> None:
+        
+        self.seq = seq  # Sequencer instance
+        self.events = []  # List of events
+        self.offset = 0  # Timeoffset - great for going 'back in time'
+        self.index = 0  # Event index we are currently on
+        self.name = None  #  Name of the synth chain to invoke
+
+    def note(self, num, length, index=-1, name=None):
+
+        """
+        We schedule a note event with the given note number,
+        length, and index of the event to add.
+
+        The 'num' parameter can be a integer, or a 'Note' object.
+        If it is an integer, then it will be converted into a note.
+
+        The 'length' is the length of the note.
+        We will block and remove the note at the end of this time.
+
+        Index is the index to insert the event at.
+        Be default, the command is appended to the end of the event list,
+        but you could place it elsewhere if necessary.
+
+        :param num: Number of the note to play
+        :type num: int, Note
+        :param length: Length of the note to play
+        :type length: float
+        :param index: Index to insert the command at
+        :type index: int
+        :param name: Name of the synth to add
+        :type name: int, str
+        """
+
+        # First, check to see if we are working with a note:
+
+        if type(num) != Note:
+
+            # Convert into a note:
+
+            num = Note.from_num(num)
+
+        # Create an event:
+
+        self.add_event(NoteOn(num, length, name=name), index)
+
+    def rest(self, length, index=-1):
+
+        """
+        Adds a rest event of given length.
+
+        This adds a period of empty time to the SeqCommand,
+        meaning that any notes scheduled after this event
+        will not start during this period.
+
+        The decoder can manually schedule notes during this time,
+        and they will be invoked normally. 
+
+        :param length: Time to rest for
+        :type length: float
+        :param index: Index to add the event at
+        :type index: int
+        """
+
+        # Create and add the event:
+
+        self.add_event(Rest(length), index)
+
+    def repeat(self, pos, num, index=-1):
+
+        """
+        Repeats back to the given index a number of time.
+
+        If the number of times is -1,
+        then we will repeat indefinitely.
+
+        :param pos: Index to repeat back to
+        :type pos: int
+        :param num: Number of times to repeat
+        :type num: int
+        :param index: Index to add the event at
+        :type index: int
+        """
+
+        # Create and add the event:
+
+        self.add_event(Repeat(pos, num), index)
+
+    def chord(self, notes, length, index=-1, name=None):
+
+        """
+        Creates a chord with a given length.
+
+        We do this by creating a Chord event.
+
+        :param notes: Notes to be included in the chord
+        :type notes: list
+        :param length: Length of the chord
+        :type length: float
+        :param index: Index to add the event at
+        :type index: int
+        :param name: Name of the instrument to toggle
+        :type name: str, int
+        """
+
+        # Check if we should convert the notes:
+
+        for num, note in enumerate(notes):
+
+            if type(note) != Note:
+
+                # Lets convert the note:
+
+                note = Note.from_num(note)
+
+                notes[num] = note
+
+        # Create and ass the Chord event:
+
+        print("Creating chord with notes: {}".format(notes))
+
+        self.add_event(Chord(notes, length, name=name), index)
+
+    def add_event(self, event, index):
+
+        """
+        Adds an event at the given index.
+
+        We use the accumulated time from the events before us to determine the start time.
+
+        :param event: Event to add
+        :type event: BaseEvent
+        :param index: Index to add the event to
+        :type index: int
+        """
+
+        # Bind info to the event:
+
+        event._bind(self, self.seq)
+
+        # Add the event:
+
+        if index == -1:
+
+            # Just append the item:
+
+            self.events.append(event)
+
+            # Set the index:
+
+            index = len(self.events) - 1
+
+        else:
+
+            self.events.insert(index, event)
+
+        # Set the start time:
+
+        event._set_start(self._get_acctime(index))
+
+    def _get_acctime(self, index):
+        
+        """
+        Gets the accumulated time at the given index.
+
+        The accumulated time is the total time elapsed in the events before us.
+        We simply get the stop time for the event directly behind us in the event list.
+
+        :param index: Index to get the accumulated time for
+        :type index: int
+        """
+
+        # Check if we are working with index 0:
+
+        if index == 0:
+
+            # We are the start, meaning acc time will be zero:
+
+            return 0
+
+        # Get the stop time for the event ahead of us:
+
+        return self.events[index-1].time_stop
+
+    def run(self, time):
+
+        """
+        Runs the given commands, and starts manipulating the sequencer.
+
+        We run ALL events that are less than the given time value,
+        and that are more than our current index.
+        We also add the offset to the start time,
+        as it will be used to support features like repeating.
+
+        Normally, we return True when we have done our work.
+        When we are done iterating, then we will return False.
+
+        :param time: Time value, all events less than this will be ran
+        :type time: int
+        :retrun: True when successful, False when done
+        """
+
+        # Find all events that fall within our parameters:
+
+        events = 0
+
+        for event in self.events[self.index:]:
+
+            if event.time_start + self.offset < time:
+
+                # Found a valid event, lets run it:
+
+                event.run()
+                events += 1
+            
+                continue
+
+            # Nothing, lets update our index and continue:
+
+            self.index += events
+
+            print("New index: {}".format(self.index))
+
+            return True
+
+        # We really are done, let's return False
+
+        return False
+
+
+class SeqCommandOld:
+
+    """
+    Sequencer Command - easy to use sequencer event programming.
+
+    We allow for the programming and scheduling of sequencer events,
+    optimized specifically for speed.
+
+    Decoders can program us with events for the sequencer to execute.
+    We are then passed along to the sequencer and the events are executed in an efficient way.
+    This prevents decoding latency, and can keep different tracks synchronized.
+
+    We support very common commands, such as turning notes on/off,
+    resting, looping, tempo changes, and chords.
+    All of this functionality is provided via methods,
+    and the internal storage of commands is highly optimized.
+
+    Our events are classes that change the state of the sequencer,
+    or this class.
+    We offer methods for creating common events,
+    such as notes on/off.
+    If you wanted custom functionality that we do not offer by default,
+    you could create an event and register it normally.
+    """
+
+    def __init__(self, seq, tempo=120, notes_per_measure=4):
+
+        self.seq = seq  # Sequencer instance to work with
+        self.events = []  # List of sequencer events
+        self.tempo = tempo  # Tempo in beats per minute
+        self.notes_per_measure = notes_per_measure  # number of notes per measure
+
+        self.index = 0  # Index we are at in the command list
+
+    def note(self, num, length, index=-1, name=None):
+
+        """
+        We schedule a note event with the given note number,
+        length, and index of the event to add.
+
+        The 'num' parameter can be a integer, or a 'Note' object.
+        If it is an integer, then it will be converted into a note.
+
+        The 'length' is the length of the note.
+        We will block and remove the note at the end of this time.
+
+        Index is the index to insert the event at.
+        Be default, the command is appended to the end of the event list,
+        but you could place it elsewhere if necessary.
+
+        :param num: Number of the note to play
+        :type num: int, Note
+        :param length: Length of the note to play
+        :type length: float
+        :param index: Index to insert the command at
+        :type index: int
+        :param name: Name of the synth to add
+        :type name: int, str
+        """
+
+        # First, check to see if we are working with a note:
+
+        if type(num) != Note:
+
+            # Convert into a note:
+
+            num = Note.from_num(num)
+
+        # Create an event:
+
+        self.add_event(NoteOn(num, length, name=name), index)
+
+    def rest(self, length, index=-1):
+
+        """
+        Adds a rest event of given length.
+
+        This effectively stops this sequencer command,
+        and rests for a period of time.
+
+        :param length: Time to rest for
+        :type length: float
+        :param index: Index to add the event at
+        :type index: int
+        """
+
+        # Create and add the event:
+
+        self.add_event(Rest(length), index)
+
+    def repeat(self, pos, num, index=-1):
+
+        """
+        Repeats back to the given index a number of time.
+
+        If the number of times is -1,
+        then we will repeat indefinitely.
+
+        :param pos: Index to repeat back to
+        :type pos: int
+        :param num: Number of times to repeat
+        :type num: int
+        :param index: Index to add the event at
+        :type index: int
+        """
+
+        # Create and add the event:
+
+        self.add_event(Repeat(pos, num), index)
+
+    def chord(self, notes, length, index=-1, name=None):
+
+        """
+        Creates a chord with a given length.
+
+        We do this by creating a Chord event.
+
+        :param notes: Notes to be included in the chord
+        :type notes: list
+        :param length: Length of the chord
+        :type length: float
+        :param index: Index to add the event at
+        :type index: int
+        :param name: Name of the instrument to toggle
+        :type name: str, int
+        """
+
+        # Check if we should convert the notes:
+
+        for num, note in enumerate(notes):
+
+            if type(note) != Note:
+
+                # Lets convert the note:
+
+                note = Note.from_num(note)
+
+                notes[num] = note
+
+        # Create and ass the Chord event:
+
+        print("Creating chord with notes: {}".format(notes))
+
+        self.add_event(Chord(notes, length, name=name), index)
+
+    def add_event(self, event, index):
+
+        """
+        Adds an event at the given index.
+
+        We also append this object,
+        s well as the sequencer instance.
+
+        :param event: Event to add
+        :type event: BaseCommand
+        :param index: Index to add the event to
+        :type index: int
+        """
+
+        # Bind info to the event:
+
+        event._bind(self, self.seq)
+
+        # Add the event:
+
+        if index == -1:
+
+            # Just append the item:
+
+            self.events.append(event)
+
+            return
+
+        self.events.insert(index, event)
+
+    def run(self, cond=True):
+
+        """
+        Runs the sequencer commands,
+        and start manipulating the sequencer.
+
+        This is a blocking function,
+        and we will block until we reach then end.
+
+        This should be called when the events are setup and configured.
+
+        You can also pass a conditional to determine when we stop.
+        Once this value becomes False, then we will stop our command loop.
+
+        :param cond: Conditional to check after each event
+        """
+
+        while self.index < len(self.events) and cond:
+
+            # Get the event at this potion and run it:
+
+            self.events[self.index].run()
+
+            # Increment our index:
+
+            self.index += 1
+
+
 class Sequencer(object):
 
     """
@@ -455,13 +1185,41 @@ class Sequencer(object):
     def __init__(self, middle_freq=440.0):
 
         self._synths = {}  # Mapping synths to notes
-        self._input = None  # Input Module - Gets our info from somewhere
-        self._decoder = None  # Decoder module - Decodes our info
+        self._coms = []  # List of sequencer commands to run
+        self._input = BaseInput()  # Input Module - Gets our info from somewhere
+        self._decoder = BaseDecoder()  # Decoder module - Decodes our info
         self._on = {}  # Dictionary of synths and their notes that are on
 
-        self.thread = None  # Control thread instance
+        self.thread = None  # Threading control instance for modules
         self.default_name = 'default'  # Name to be used if no name is specified
         self.middle = middle_freq  # Middle frequency to use when decoding note numbers
+
+        self.lookahead = 75 * 1000000  # Lookahead in nanoseconds
+        self.interval = 50 / 1000  # Wait interval in seconds
+
+        self.running = True  # Value determining if we are running
+
+    def lookahead_ms(self, look):
+
+        """
+        Sets the lookahead using the given value in microseconds.
+
+        We automatically convert the microseconds into nanoseconds,
+        as this sequencer works with nanoseconds.
+        """
+
+        self.lookahead = look * 1000000
+
+    def interval_ms(self, wait):
+
+        """
+        Sets the waiting interval using the given value in microseconds.
+
+        We automatically convert the microseconds into seconds,
+        as this is what time.sleep() understands.
+        """
+
+        self.interval = wait / 1000
 
     def start(self):
 
@@ -469,19 +1227,19 @@ class Sequencer(object):
         Starts the sequencer, control thread, and bound modules.
         """
 
-        # Starts the decoder module first:
-
-        self._decoder.running = True
-        self._decoder.start()
-
-        # Start the input module:
+        # Start each component:
 
         self._input.running = True
         self._input.start()
 
-        # Start the run method in the input:
+        self._decoder.running = True
+        self._decoder.start()
 
-        self._input.run()
+        # Start the control thread;
+
+        self.thread = threading.Thread(target=self._input.run)
+        self.thread.daemon = True
+        self.thread.start()
 
     def stop(self):
 
@@ -489,15 +1247,28 @@ class Sequencer(object):
         Stops the sequencer, control thread, and bound modules.
         """
 
-        # Stop the input module:
+        self.running = False
+
+        # Stop the modules:
 
         self._input.running = False
-        self._input.stop()
-
-        # Stop the decoder module:
-
         self._decoder.running = False
+
+        self._input.stop()
         self._decoder.stop()
+
+        # Stop the running synths:
+
+        self.stop_all()
+
+    def join(self):
+
+        """
+        Joins all the track threads,
+        and blocks until each of them are done.
+        """
+
+        self.thread.join()
 
     def bind_input(self, inp):
 
@@ -514,22 +1285,35 @@ class Sequencer(object):
 
         assert isinstance(inp, BaseInput), "Given input module MUST inherit BaseInput!"
 
-        # Valid class! Lets bind this module to us
+        # Valid class! Lets bind this module to us:
 
         self._input = inp
 
-        # Lets give them relevant information:
+        # Bind everything:
 
-        inp.seq = self
-        inp.decoder = self._decoder
+        self._bind_comps()
 
-        # Lets give our decoder relevant information:
+    def add_seqcom(self, com):
 
-        if self._decoder is not None:
+        """
+        Adds the given SeqCommand instance to this sequencer.
 
-            # Add ourselves to the decoder:
+        If we are ever invoked, 
+        then we will run each SeqCommand in our collection.
 
-            self._decoder.input = inp
+        We do a quick check to make sure the thing we are adding is a SeqCommand.
+
+        :param com: SeqCommand instance to add
+        :type com: SeqCommand
+        """
+
+        # Check to make sure it is a SeqCommand
+
+        assert isinstance(com, SeqCommand), "Given command chain MUST inherit SeqCommand!"
+
+        # Valid class, lets add it:
+
+        self._coms.append(com)
 
     def bind_decoder(self, dec):
 
@@ -550,18 +1334,9 @@ class Sequencer(object):
 
         self._decoder = dec
 
-        # Lets add some relevant information:
+        # Bind everything:
 
-        dec.seq = self
-        dec.input = self._input
-
-        # Add ourselves to the input module:
-
-        if self._input is not None:
-
-            # Add ourselves to the input module:
-
-            self._input.decoder = dec
+        self._bind_comps()
 
     def add_synth(self, synth, name=None, notes=None):
 
@@ -580,7 +1355,7 @@ class Sequencer(object):
 
         If notes are specified, then the synth will be registered to each name with those notes.
 
-        Synths are organised by names, which can really be anything.
+        Synths are organized by names, which can really be anything.
         Each name has a sub-section where it is registered to notes.
         You can treat these names as different kinds of instruments.
         Any wrappers(Such as MIDI or MML) will auto-configure these names for you.
@@ -630,7 +1405,7 @@ class Sequencer(object):
 
             self._synths[name]['d'] = synth
 
-    def start_note(self, note, name=None):
+    def start_note(self, note, name=None, time_stop=0, time_start=0):
 
         """
         Starts a synth at the specified note and name.
@@ -641,6 +1416,11 @@ class Sequencer(object):
 
         If a name is not provided, then we will simply search for relevant
         synths in the first name that we have registered.
+
+        We also allow for specifying the time_start and time_stop
+        parameters, which determine when a note will start and stop.
+        If neither of these are specified, then the note will start immediately,
+        and will play indefinitely until stopped.
 
         :param note: Note to turn on
         :type note: Note
@@ -655,11 +1435,15 @@ class Sequencer(object):
 
         self._on[self._resolve_name(name)].append(note.revert())
 
-        # Start the synth:
+        if time_stop > 0 and time_start > 0:
+
+            # Schedule a time event:
+
+            synth.time_event(time_start, time_stop)
 
         synth.start()
 
-    def stop_note(self, note, name=None):
+    def stop_note(self, note, name=None, time_stop=None):
 
         """
         Stops a synth at the specified note and name.
@@ -671,7 +1455,9 @@ class Sequencer(object):
 
         :param note: Note to stop
         :type note: Note
-        :param name: Name os the synth to stop
+        :param name: Name of the synth to stop
+        :param time_stop: Time to stop the synth
+        :type time_stop: int
         """
 
         # Resolve the values:
@@ -690,7 +1476,7 @@ class Sequencer(object):
 
         # Stop the synth:
 
-        synth.stop()
+        synth.stop(time=time_stop)
 
         # Remove it from output:
 
@@ -710,7 +1496,15 @@ class Sequencer(object):
 
                 # Stop the synth:
 
-                self.stop_note(Note.from_num(synth_num))
+                try:
+
+                    self.stop_note(Note.from_num(synth_num))
+
+                except:
+
+                    # Don't care about errors, continue
+
+                    continue
 
     def get_state(self, note, name=None):
 
@@ -734,6 +1528,72 @@ class Sequencer(object):
         # Check if not value is present in output
 
         return note.revert() in self._on[name]
+
+    def run_commands(self):
+
+        """
+        Runs the given SeqCommand instances.
+
+        This is where the magic happens with SeqCommands.
+        We handle and invoke each track at the same time, 
+        to ensure that they remain synchronized.
+
+        We use a lookahead method for scheduling synth components.
+        We lookahead a given amount of time, schedule the events
+        that occur within that time, and then sleep until the next cycle.
+
+        This is a blocking method,
+        meaning that we will block until we reach the end of the SeqCommand,
+        or this sequencer is stopped. 
+        """
+
+        start = get_time()
+
+        for com in self._coms:
+
+            # Set the offset for each SeqCommand
+
+            com.offset = start
+        
+        while self.running and self._coms:
+
+            # Get our time value:
+
+            time_now = get_time() + self.lookahead
+
+            # Iterate over the commands:
+
+            for com in self._coms:
+
+                # Have the command invoke the synths that are ready:
+
+                if com.run(time_now):
+
+                    # Did our work, lets continue:
+
+                    continue
+
+                # SeqCommand is done, lets remove it
+
+                self._coms.remove(com)
+
+            # Wait until next cycle:
+
+            time.sleep(self.interval)
+
+        # Check if we should block:
+
+        if self.running:
+
+            # We are done, block until the notes are done playing:
+
+            for name in self._on:
+
+                for note in self._on[name]:
+
+                    # Find the synth for the on note and block:
+
+                    self._find_synth(Note.from_num(note), name=name).join()      
 
     def _resolve_name(self, name):
 
@@ -833,3 +1693,21 @@ class Sequencer(object):
         # Synth has been found or registered!
 
         return synth
+
+    def _bind_comps(self):
+
+        """
+        Binds all components together.
+
+        This is called multiple times to ensure that all components are aware of eachother.
+        """
+
+        # Binds the modules to each other:
+
+        self._input.decoder = self._decoder
+        self._decoder.input = self._input
+
+        # Bind ourself to the components:
+
+        self._input.seq = self
+        self._decoder.seq = self

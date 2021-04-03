@@ -42,8 +42,9 @@ class OutputControl(BaseModule):
 
     We offer the ability to add ourselves to the OutputHandler until we are stopped
     (Great for sequencer use).
-    We also offer ways to add ourselves for a certain period of time,
-    like for a certain period of time, or a certain number of samples.
+    We also offer an internal scheduling system that allows users and sequencers to specify 
+    when we should add and remove ourselves from the OutputHandler.
+    This allows us to control ourselves, and makes audio scheduling easy!
 
     Point is, if you iterate over us,
     or call our start method,
@@ -60,8 +61,14 @@ class OutputControl(BaseModule):
 
         super(OutputControl, self).__init__()
 
-        self.time_remove = 0  # Time to remove ourselves. If 0, then we don't keep track
         self.item_written = 0  # Number of items to write. If 0, then we don't keep track
+
+        self.time_events = []  # List of time events
+
+        self.started = False  # Value determining if we are added to the OutputHandler
+        self.finishing = False  # Value determining if we are finishing
+        self.wait = False  # Value determining if we are started, but are wating on a time event
+
 
     def start(self):
 
@@ -71,20 +78,121 @@ class OutputControl(BaseModule):
         '__iter__()' does all the dirty work!
         """
 
-        return iter(self)
+        # Check if we are not started
+
+        if not self.started:
+
+            print("Starting...")
+
+            return iter(self)
+
+        # Check if we are finishing:
+
+        if self.finishing:
+
+            # We are just finishing, restart the modules:
+
+            print("Resetting modules...")
+
+            self.input.start_modules()
+
+            self.finishing = False
+
+            self.info.done = 0
 
     def stop(self):
 
         """
-        Remove ourselves from the OutputHandler.
+        Stop method - A polite way of stopping this control instance!
+
+        This function prepares this instance to stop,
+        but does not actually do so until all modules are ready to stop.
+
+        This allows features like fade outs, echos, and amplitude envelopes
+        to continue to operate even after this instance is asked to stop.
+
+        Once all modules have reported that they are ready to stop,
+        and there are no other time events to process,
+        then we will automatically call 'abs_stop()' which
+        will complete the process of removing us from the OutputHandler. 
         """
 
-        # Remove ourselves from the OutputHandler:
+        # Tell the chain that we are done:
 
-        self.OUT[0]._remove_synth(self)
+        self.done()
 
-        self.time_remove = 0
-        self.item_written = 0
+        # Have the modules finish up:
+
+        self.input.finish_modules()
+
+        # Update our status:
+
+        self.finishing = True
+
+    def abs_stop(self):
+
+        """
+        Absolute stop - Completely stops this control instance!
+
+        When called, we remove ourselves from the OutputHandler,
+        reset our state, and stop the synth chain.
+
+        This function ignores time events and finish status!
+        Thats great for immediately stopping this synth chain,
+        but not that great if you are expecting modules to finish up,
+        and it might interfear with the sequencer, 
+        and it's ability to properly manage the notes attached to this object.
+
+        This function is called by us automatically,
+        when the synth chain is finished,
+        and we don't have any more time events.
+        So worry not! You do not have to call this function manually,
+        as we will automatically do so.
+
+        This removes us from the OutputHandler,
+        meaning that this chain will NOT be in an event loop.
+        This means that time events and the modules will NOT be sampled
+        or worked with until our 'start()' method is called by an external entity.
+
+        Point is - It is probably in your best intrest to NOT call this function!
+        We should be able to automatically handle the process of stopping ourselves.
+        It is better to politely stop this module chain by calling 'stop()',
+        so we can ensure that the modules are completely ready to stop. 
+        """
+
+        if self.info.running:
+
+            # Remove ourselves from the OutputHandler:
+
+            print("Removing ourselves from output hand")
+
+            self.OUT[0]._remove_synth(self)
+
+            # Reset our values:
+
+            self.item_written = 0
+            self.time_events.clear()
+
+            # Stop the chain:
+
+            self.input.stop_modules()
+
+            # Update our status:
+
+            self.started = False
+            self.finishing = False
+
+    def join(self):
+
+        """
+        Blocks until the OutputControl is removed from OutputHandler.
+        """
+
+        while self.started:
+
+            continue
+
+        return
 
     def get_next(self):
 
@@ -96,47 +204,63 @@ class OutputControl(BaseModule):
         which will remove us from the OutputHandler.
         """
 
-        # Lets see if we should remove ourselves:
+        time_now = get_time()
 
-        '''
-        if self.time_remove != 0 and self.time_remove > get_time():
+        # Lets see if we are ready to start:
 
-            # >Time< to remove ourselves! Our >Time< is up!
+        if self.time_events and self.time_events[0][0] > time_now:
+
+            # We are not ready to start, lets wait:
+
+            return None
+
+        if self.time_events and self.time_events[0][0] < time_now:
+
+            # We are ready, lets start the synth chain:
+
+            self.wait = False
+
+            self.start()
+
+        # Lets see if we are ready to stop:
+
+        if self.time_events and self.time_events[0][1] < time_now and self.time_events[0][0] >= 0:
+
+            print("Ready to stop")
+
+            # We are done! Lets remove the time event:
+
+            self.time_events.pop(0)
+
+            # Prepare the synth chain for stopping:
 
             self.stop()
 
-            return
+        # Lets see if we have written enough:
 
         if self.item_written != 0 and self.item_written > self.index:
 
-            # We have written everything we can, lets remove:
+            # We have written everything we can, lets prepare for stopping:
 
             self.stop()
 
-            return
+        # State of the object has been changed, let's see if we are ready to stop:
 
-        '''
+        if not self.info.running or self.info.done == self.info.connected:
+
+            # Chain has stopped, or all modules ready to stop:
+
+            print("Removing synth chain...")
+
+            self._event_done()
+
+            self.info.done = 0
+
+            return None
 
         # Otherwise, lets just return!
 
         return self.get_input()
-
-    def write_time(self, time):
-
-        """
-        Registers ourselves with the OutputHandler until we reach time.
-
-        :param time: Time to stop sending info to Output
-        :type time: int
-        """
-
-        # Set the time limit:
-
-        self.time_remove = time
-
-        # Start ourselves:
-
-        self.start()
 
     def write_num(self, num):
 
@@ -154,6 +278,55 @@ class OutputControl(BaseModule):
         # Start ourselves:
 
         self.start()
+
+    def time_event(self, start, stop):
+
+        """
+        Schedules a time event for this OutputControl instance.
+
+        Time events allows us to add and remove ourselves during certain intervals.
+
+        'start' determines the time to start this object.
+        We will not return audio values until the value from 'get_time()'
+        is less than or equal to this value.
+        If you want this object to start immediately, then supply 0 for this value.
+
+        'stop' determines the time to stop this object.
+        We will remove ourselves from the OutputHandler when the value from 'get_time()'
+        is less than or equal to this value.
+        If you want this object to continue indefinitely, then supply -1 for this value.
+
+        You can schedule multiple time events, and we will handle them as necessary.
+        Once a time event has been completed,
+        (Added and removed ourselves during the given interval),
+        then we will remove the time event.
+        If there are no other time events, then we will remove ourselves from the OutputHandler. 
+        """
+
+        # Add the time event to this object:
+
+        self.time_events.append([start, stop])
+
+    def _event_done(self):
+
+        """
+        Method called when we have processed a time event
+        (Passed start and stop times).
+
+        We will determine if we should remove ourselves completely from OutputHandler.
+        If these are more events in the 'time_events' list,
+        then we will remain added, as we will eventually start ourselves.
+        """
+
+        if self.time_events:
+
+            # We are good to continue
+
+            return
+
+        # No events scheduled, lets exit:
+
+        self.abs_stop()
 
     def __iter__(self):
 
@@ -219,7 +392,6 @@ class OutputHandler:
         self.rate = rate  # Rate to output audio
         self.futures = []
         self.thread = []
-        self.barrier = None  # Instance of the barrier class
 
         self.run = False  # Value determining if we are running
         self._pause = threading.Event()  # Event object determining if we are paused
@@ -404,8 +576,6 @@ class OutputHandler:
 
             # Get some audio information:
 
-            #inp = int(next(self._input) * 32767)
-
             inp = next(self._input)
 
             if inp is None:
@@ -418,9 +588,15 @@ class OutputHandler:
 
                 # Add the input to the module:
 
+                if mod.special:
+
+                    # Ignore and continue:
+
+                    continue
+
                 mod.add_input(inp)
 
-            break
+            return inp
 
     def _add_synth(self, synth):
 
@@ -483,6 +659,7 @@ class OutputHandler:
         #self._work.submit(mod.run)
 
         thread = threading.Thread(target=mod.run)
+        thread.daemon = True
         thread.start()
         self.thread.append(thread)
 

@@ -92,12 +92,8 @@ class BaseOutput(object):
         Gets a value from the queue and sends it through the converter.
         We support the timeout feature, which is the amount of time to stop our operation..
 
-        Due to threading and our method of synchronisation,
+        Due to threading and our method of synchronization,
         we will ALWAYS block.
-        Before we try to get something from the queue,
-        we try to pass the barrier.
-        This ensures all modules are synchronised,
-        and will prevent issues like sampling the synths too quickly.
 
         You can optionally disable conversion by using the 'raw' parameter.
 
@@ -114,15 +110,17 @@ class BaseOutput(object):
         :type raw: bool
         """
 
-        # Check the barrier:
-
         if self.special:
 
-            self.out.gen_value()
+            # Generate a new frame
 
-        # Get input from the queue:
+            inp = self.out.gen_value()
 
-        inp = self.queue.get(timeout=timeout)
+        else:
+
+            # Get input from the queue:
+
+            inp = self.queue.get(timeout=timeout)
 
         # We are done processing!
 
@@ -456,7 +454,7 @@ class PyAudioModule(BaseOutput):
 
     The user can specify which device they want to use.
     We will offer methods for getting and selecting devices.
-    We also allow for the customisation of the number of frames per write,
+    We also allow for the customization of the number of frames per write,
 
     On the creation of this module,
     we attempt to import the PyAudio library.
@@ -534,21 +532,9 @@ class PyAudioModule(BaseOutput):
 
             # Get a certain number of frames:
 
-            #print("PyCalling")
-
-            #start = get_time()
-
-            frames = self.get_added_inputs(self.frames_per_buffer + 1000)
-
-            #print("Frame time Py: {}".format(get_time()-start))
+            frames = self.get_added_inputs(self.frames_per_buffer)
 
             # Send them to PyAudio
-
-            #start = get_time()
-
-            #frame = self.get_input()
-
-            #self.stream.write(struct.pack('f', frame))
 
             self.stream.write(frames)
 

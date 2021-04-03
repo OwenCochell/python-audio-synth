@@ -4,7 +4,7 @@ Sequencer wrapper for Music Marco Language.
 This standard is very open ended, so we take some liberties to describe it.
 """
 
-from pysynth.seq import BaseInput, BaseDecoder, Sequencer, Note
+from pysynth.seq import BaseInput, BaseDecoder, Sequencer, Note, SeqCommand
 
 import time
 
@@ -12,7 +12,7 @@ import time
 class MMLSeeker:
 
     """
-    A string seeker optimised for MML.
+    A string seeker optimized for MML.
 
     We allow for easy parsing and traversing of strings containing MML data,
     and have some uses that are specific to MML.
@@ -211,23 +211,15 @@ class BaseMMLInput(BaseInput):
         Continuously move the seeker forward and call the decoder.
         """
 
-        while self.running and self.source.index < len(self.source.source):
+        for event in self.decoder.command.events:
 
-            # Call the decoder:
+            print(event)
 
-            self.decoder.decode()
+        # Run the SeqCommand instance:
 
-            # move ourselves forward:
+        self.seq.run_commands()
 
-            try:
-
-                self.source.forward()
-
-            except:
-
-                # Alright, let's stop the sequencer
-
-                return
+        print("Done running")
 
 
 class StringMMLInput(BaseMMLInput):
@@ -236,19 +228,9 @@ class StringMMLInput(BaseMMLInput):
     We iterate over a given string.
     """
 
-    def __init__(self, mml):
+    def __init__(self):
 
         super(StringMMLInput, self).__init__()
-
-        self.mml = mml  # MML Input string
-
-    def start(self):
-
-        """
-        We add the MML string to the seeker.
-        """
-
-        self.load_string(self.mml)
 
 
 class MMLDecoder(BaseDecoder):
@@ -265,15 +247,73 @@ class MMLDecoder(BaseDecoder):
 
         super(MMLDecoder, self).__init__()
 
-        self.octave = 0  # Current octave we are set at
-        self.tempo = 120  # Tempo in beats per minute
-        self.default_length = 4  # Default length to apply when not specified
-        self.beats_per_measure = 4  # Number of beats per measure, used to determine lengths of notes
-        self.name = 0  # Name of the instrument to register
+        self._reset_values()
+
+        self.command = None  # Sequencer command instance
 
         self.notes = []  # List of notes in an ongoing chord
         self.source = None  # Source of all MML input, usually provided by the input module
         self.note_map = {'c': -9, 'd': -7, 'e': -5, 'f': -4, 'g': -2, 'a': 0, 'b': 2}  # Mapping notes to note values
+
+    def _reset_values(self):
+
+        """
+        Resets(Or sets) this decodes values back to normal.
+
+        This is called upon each new track,
+        as each track will have their own configurations.
+        """
+
+        self.octave = 0  # Current octave we are set at
+        self.tempo = 120  # Tempo in beats per minute
+        self.default_length = 4  # Default length to apply when not specified
+        self.beats_per_measure = 4  # Number of beats per measure, used to determine lengths of notes
+        self.name = None  # Name of the instrument to register
+        self.loop_index = 0  # Index of initial loop
+        self.num_processed = 0  # Number of items processed
+        self.loop = False  # Value determining if we are restarting the loop
+
+    def start(self):
+
+        """
+        We setup and configure the Sequencer Command instance.
+
+        We also parse the source string for input.
+        """
+
+        # Create the SeqCommand instance
+
+        self.command = SeqCommand(self.seq)
+
+        # Parse over the input text:
+
+        while True:
+
+            # Decode the next character
+
+            self.decode()
+
+            # Move the source forward:
+
+            try:
+
+                self.source.forward()
+
+            except:
+
+                # We are done decoding, lets exit:
+
+                break
+
+        if self.loop:
+
+            # Add a endless repeat:
+
+            print("Adding repeat:")
+
+            self.command.repeat(0, -1)
+
+        self.seq.add_seqcom(self.command)
 
     def decode(self, chord=False):
 
@@ -304,6 +344,12 @@ class MMLDecoder(BaseDecoder):
 
             self.read_note(no_time=chord)
 
+            if not chord:
+
+                # Increment our invalid index:
+
+                self.num_processed += 1
+
             return
 
         # Check if we are resting:
@@ -314,9 +360,11 @@ class MMLDecoder(BaseDecoder):
 
             time_amount = self.read_length()
 
-            # Sleep for the amount of time:
+            # Add a rest event:
 
-            time.sleep(self.find_time_type(time_amount))
+            self.command.rest(self.find_time_type(time_amount))
+
+            self.num_processed += 1
 
             return
 
@@ -336,15 +384,16 @@ class MMLDecoder(BaseDecoder):
 
             length = self.find_time_type(self.read_length())
 
-            print("Sleeping in chord: {}".format(length))
+            # Add the event to the SeqCommand:
 
-            # Wait the amount of time:
+            self.command.chord(self.notes, length)
 
-            time.sleep(length)
+            print("Adding chords with notes: {}".format(self.notes))
+            print("Length: {}".format(length))
 
-            # Kill our notes:
+            self.notes.clear()
 
-            self.kill_chord()
+            self.num_processed += 1
 
             return
 
@@ -370,6 +419,40 @@ class MMLDecoder(BaseDecoder):
 
                 return
 
+        # Check if we are starting a loop:
+
+        if inp == '/' and self.source.peek() == ':':
+
+            # We are starting a loop, lets set our start index:
+
+            self.source.forward()
+
+            self.loop_index = self.num_processed
+
+            return
+
+        if inp == ':' and self.source.peek() == '/':
+
+            # We are at the end of a loop!
+
+            self.source.forward()
+
+            # Add a repeat event to the SeqCommand:
+
+            self.command.repeat(self.loop_index, self.read_number())
+
+            return
+
+        # Check if we are working with endless looping:
+
+        if inp == '$':
+
+            # We are endlessly looping, let's add it at the end:
+
+            self.loop = True
+
+            return
+
         # Check if we are changing our octave:
 
         if inp == 'o':
@@ -378,9 +461,17 @@ class MMLDecoder(BaseDecoder):
 
             self.octave = self.read_number() - 4
 
-            print("Set octave: {}".format(self.octave))
-
             return
+
+        # Check for a velocity value
+
+        if inp == 'v':
+
+            # Reading a velocity value;
+
+            length = self.read_number()
+
+        # Check for a change in default length:
 
         if inp == 'l':
 
@@ -388,9 +479,9 @@ class MMLDecoder(BaseDecoder):
 
             self.default_length = self.read_length()
 
-            print("Default length: {}".format(self.default_length))
-
             return
+
+        # Check for change in tempo:
 
         if inp == 't':
 
@@ -398,15 +489,34 @@ class MMLDecoder(BaseDecoder):
 
             self.tempo = self.read_length()
 
-            print("Set tempo: {}".format(self.tempo))
+            return
+
+        # Check for track change:
+
+        if inp == ';':
+
+            # Change in track, let's reset ourselves:
+
+            if self.loop:
+
+                # We are forever looping, lets add it:
+
+                self.command.repeat(0, -1)
+
+            # Add our current command chain:
+
+            self.seq.add_seqcom(self.command)
+
+            # Create a new SeqCommand:
+
+            self.command = SeqCommand(self.seq)
 
             return
 
     def read_note(self, no_time=False):
 
         """
-        Reads a note at the current position,
-        and invokes the sequencer.
+        Reads a note at the current position.
 
         We also handle the processing of accidentals, and
         the reading of note lengths.
@@ -434,15 +544,9 @@ class MMLDecoder(BaseDecoder):
 
         note_val = Note(self.octave, note_num + self.read_accidental())
 
-        print("Got note: {} ; {}".format(note_val.octave, note_val.step))
-
-        # Start the note:
-
-        self.seq.start_note(note_val)
-
         if no_time:
 
-            # We are done, let's exit:
+            # Lets just add the note to the lists:
 
             self.notes.append(note_val)
 
@@ -456,15 +560,11 @@ class MMLDecoder(BaseDecoder):
 
         time_amount = self.find_time_type(length)
 
-        # Wait a certain amount of time:
+        print("Adding note {} with time {}".format(note_val, time_amount))
 
-        print("Sleeping for: {}".format(time_amount))
+        # Add the note to the SeqCommand:
 
-        time.sleep(time_amount)
-
-        # Turn the note off:
-
-        self.seq.stop_note(note_val)
+        self.command.note(note_val, time_amount)
 
     def read_accidental(self):
 
@@ -530,23 +630,29 @@ class MMLDecoder(BaseDecoder):
 
         length = self._read_ints()
 
-        # Lets peek at the next value:
-
-        val = self.source.peek()
-
         # Check if source is dot:
 
-        if val == '.':
+        last = 1
+        final = 0
 
-            # We have a dotted note, let's add 0.5 to our value:
+        while True:
 
-            self.source.forward()
+            if self.source.peek() == '.':
 
-            length = length + 0.5 if length else self.default_length + 0.5
+                # We have a dotted note, let's add 0.5 to our value:
+
+                self.source.forward()
+
+                last = last * 0.5
+                final += last
+
+                continue
+
+            break
+
+        length = length + final if length else self.default_length + final
 
         # We are done, let's return:
-
-        print("Got length: {}".format(length))
 
         return length if length else self.default_length
 
@@ -588,23 +694,7 @@ class MMLDecoder(BaseDecoder):
 
         # Lets return:
 
-        print("Got number: {}".format(final))
-
         return float(final)
-
-    def kill_chord(self):
-
-        """
-        Kills all the notes specified in the chord.
-        """
-
-        for note in self.notes:
-
-            # Kill the note:
-
-            self.seq.stop_note(note)
-
-        self.notes.clear()
 
     def _read_ints(self):
 
@@ -667,8 +757,15 @@ class MMLWrapper(Sequencer):
 
         """
         Creates a StringMMLInput module and binds it to this sequencer.
+
         :param data: String to add to the input module
         :type data: str
         """
 
-        self.bind_input(StringMMLInput(data))
+        # Bind the StringMMLInput
+
+        self.bind_input(StringMMLInput())
+
+        # Load the input into the StringMMLInput:
+
+        self._input.load_string(data)
