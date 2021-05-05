@@ -28,3 +28,12 @@ dist/
 # Sphinx build files
 
 docs/build/
+
+# Test audio files
+
+*.wav
+
+# C Binaries
+
+*.o
+*.so

@@ -10,6 +10,8 @@ from pysynth.filters import *
 from pysynth.output.base import OutputHandler
 from pysynth.output.modules import *
 from pysynth.wrappers import querty, mml
+from pysynth.wrappers.midi import midi
+from pysynth.envelope.amp import *
 
 import time
 import pyaudio
@@ -37,18 +39,28 @@ def type_test():
 
     # Tests the audio type test
 
-    audio = AudioValue(500.0, 0, 1000)
-    audio.add_event(ExponentialRamp, 800.0, get_time()+10000000000)
-    audio.add_event(LinearRamp, 500.0, get_time()+20000000000)
+    audio = AudioValue(0.5, 0, 1000)
+    #audio.add_event(ExponentialRamp, 800.0, get_time()+10000000000)
+    #audio.add_event(LinearRamp, 500.0, get_time()+20000000000)
 
     #audio.add_event(ExponentialRamp, 800.0, get_time()+10)
     #audio.add_event(LinearRamp, 500.0, get_time()+20)
+
+    #audio.exponential_ramp(0, get_time() + 2000000000)
+
+    audio.linear_ramp(1, get_time() + 1000000000)
+
+    audio.cancel_all_events()
+
+    audio.linear_ramp(0, get_time() + 2000000000)
 
     while True:
 
         thing = audio.value
 
-        if thing == 500.0:
+        print(thing)
+
+        if thing == 0:
 
             break
 
@@ -359,12 +371,27 @@ def keyboard_input():
 
     sequencer.load_keyboard()
 
+    attack = 1000000000
+    decay = 1000000000
+    sustain = 0.2
+    release = 1000000000
+
+    env1 = ADSREnvelope(attack, decay, sustain, release)
+    env2 = ADSREnvelope(attack, decay, sustain, release)
+    env3 = ADSREnvelope(attack, decay, sustain, release)
+    env4 = ADSREnvelope(attack, decay, sustain, release)
+
+    env1.bind(SineOscillator(440.0))
+    env2.bind(SquareOscillator(440.0))
+    env3.bind(SawToothOscillator(440.0))
+    env4.bind(TriangleOscillator(440.0))
+
     # Get controller for sine wave oscillator:
 
-    sine = out.bind_synth(SineOscillator(440.0))
-    square = out.bind_synth(SquareOscillator(440.0))
-    saw = out.bind_synth(SawToothOscillator(440.0))
-    tri = out.bind_synth(TriangleOscillator(440.0))
+    sine = out.bind_synth(env1)
+    square = out.bind_synth(env2)
+    saw = out.bind_synth(env3)
+    tri = out.bind_synth(env4)
 
     # Add sine oscillator for default instrument:
 
@@ -423,7 +450,7 @@ def mml_test():
 
     #song = 't60 o3 l4 cdefgab<c> l8 cdefgab<c> l16 cdefgab l32 cdefgab'
 
-    song = "t92 l8 o4 $ [>cg<cea]2. [>cg<ceg]4 [>>a<a<c+fa+]2. [>>a<a<c+ea]4 " \
+    song1 = "t92 l8 o4 $ [>cg<cea]2. [>cg<ceg]4 [>>a<a<c+fa+]2. [>>a<a<c+ea]4 " \
            "[>>f<fg+<cg]2. [>>f<fg+<cf]4 [>>g<gg+b<g+]2. r4; " \
            "t92 $ l1 o3 v12 r r r r2 r8 l32 v6 cdef ga b<c de fg;"
 
@@ -437,14 +464,35 @@ def mml_test():
     song = 't60 l1 a r8 a. r8 a.. r8 a...'
 
 
-    song = "t120$l8 o4 rr g  g4  g+ a+4  d4  d4  d+2 d  c   g   g4 g+   a+4 d4 d4 d+2 rr g g4 g+ a+4 d4 d4 d+2 d c g g4 g+ a+4 d4 d4 d+2.;" \
+    song = "t105 l8 o5 q75 v100 " \
+        "ab-> c4c4c4 c4.faf fedc<b-4 [gb-]2 [fa]4 agb-a>c<b- >c+dc<b-ag f2[ea]g f4r4" \
+        "[fa][eg] [eg]2[gb-][fa] [fa]2>c<b b>dfd<b>d c4.<b-" \
+        "ab-> c4c4c4 c4.faf fedc<b-4 [gb-]2 [fa]4 agb-a>c<b- >c+dc<b-ag f2[ea]g f4r4;" \
+        "t105 l8 o4 q75 v75" \
+        "r4 f>c<a>c<a>c< f>c<a>c<a>c< g>c<b->c<b->c< [e>c]2 [f>c]4 [b->d]2.^2 [<b->b-]4 [ca]2[cb-]4 [fa]4 <f4>" \
+        "r4 c4>c4r4< c4>c4r4< [cdf]4[cdf]4[cdf]4 [ce]4r4" \
+        "r4 f>c<a>c<a>c< f>c<a>c<a>c< g>c<b->c<b->c< [e>c]2 [f>c]4 [b->d]2.^2 [<b->b-]4 [ca]2[cb-]4 [fa]4 <f4>;" \
+
+
+    song2 = "t120$l8 o4 rr g  g4  g+ a+4  d4  d4  d+2 d  c   g   g4 g+   a+4 d4 d4 d+2 rr g g4 g+ a+4 d4 d4 d+2 d c g g4 g+ a+4 d4 d4 d+2.;" \
            "t120$l8 o4 rr d+ d+2 r  >a+4 a+4 <c2 >a+ g+ <d+ d+2 r  >a+4 a+4 a+2 rr d+ d+2 r >a+4 a+4 <c2 >a+ g+ <d+ d+2 r >a+4 a+4 a+2.;" \
            "t120$l8 o4 rr c  c2  r  >f4  f4  g2  a+  g+ <c  c2 >f  f4   r   f g2< rr c c2 r >f4 f4 g2 a+ g+ <c c2 >f f4 r f g2.<;" \
            "t120$l8 o3 >g+2.. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c4. >d+ a+ g+2. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <r2." \
 
+    #song = 't60 o3 l4 cdefgab<c> l8 cdefgab<c> l16 cdefgab l32 cdefgab'
+
+    #song = '$ t120 o4 l4 e f+ b > c+ d < f+ e > c+ < b f+ > d c+ <e f+ b > c+ d < f+ e > c+ < b f+ > d c+'
+
     sec = mml.MMLWrapper()
 
-    sec.load_string(song)
+    sec.load_string(song2)
+
+    out = OutputHandler()
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+    out.add_output(pyaud)
+
 
     # --== Instrument Selection: ==--
     # Uncomment the instrument you want to use!
@@ -454,18 +502,34 @@ def mml_test():
     osc = SawToothOscillator(freq=440.0)
     #osc = TriangleOscillator(freq=440.0)
 
+    final = osc
     # --== End Instrument Selection! ==--
 
-    out = OutputHandler()
+    # --== Other Output Options: ==--
+    # Uncomment to write to a wav file:
 
-    pyaud = PyAudioModule()
-    pyaud.special = True
-    out.add_output(pyaud)
+    #wave = WaveModule('saw_test.wav')
+    #out.add_output(wave)
 
-    wave = WaveModule('saw_test.wav')
-    out.add_output(wave)
+    # --== End Other Output Options! ==--
 
-    cont = out.bind_synth(osc)
+    # --== ADSR Options: ==--
+    # COnfigure the parameters for the ADSR envelope:
+
+    attack = 10000000
+    decay = 100000
+    sustain = 0.2
+    release = 5000000
+
+    # Uncomment to enable the envelope:
+
+    #env = ADSREnvelope(attack, decay, sustain, release)
+    #env.bind(osc)
+    #final = env
+
+    # --== End ADSR Options! ==--
+
+    cont = out.bind_synth(final)
 
     sec.add_synth(cont)
 
@@ -768,7 +832,7 @@ def fade_test():
 
     cont.stop()
 
-    print("Waiting three seconds to inturrupt...")
+    print("Waiting three seconds to interrupt...")
 
     time.sleep(3)
 
@@ -781,3 +845,82 @@ def fade_test():
     print("Finished!")
 
     #sec.start()
+
+
+def adsr_test():
+
+    # Tests the ADSR envelope
+
+    attack = 1000000000
+    decay = 1000000000
+    sustain = 0.5
+    release = 1000000000
+
+    # Create the OutputHandler:
+
+    out = OutputHandler()
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+    out.add_output(pyaud)
+
+    osc = SawToothOscillator(freq=440.0)
+
+    env = ADSREnvelope(attack, decay, sustain, release)
+
+    env.bind(osc)
+
+    cont = out.bind_synth(env)
+
+    out.start()
+
+    print("Starting:")
+
+    cont.start()
+
+    time.sleep(5)
+
+    print("Stopping:")
+
+    cont.stop()
+
+    time.sleep(5)
+
+
+def MIDI_test():
+
+    # Tests if we can get MIDI info from ALSA
+
+    out = OutputHandler()
+
+    pyaud = PyAudioModule()
+    pyaud.special = True
+    out.add_output(pyaud)
+
+    osc = SineOscillator(freq=440.0)
+    #osc = SquareOscillator(freq=440.0)
+    #osc = SawToothOscillator(freq=440.0)
+    #osc = TriangleOscillator(freq=440.0)
+
+    attack = 1000000000
+    decay = 1000000000
+    sustain = 0.2
+    release = 1000000000
+
+    env = ADSREnvelope(attack, decay, sustain, release)
+    env.bind(osc)
+
+    cont = out.bind_synth(env)
+
+    seq = midi.MIDIWrapper()
+    seq.alsa_live()
+
+    seq.add_synth(cont)
+
+    out.start()
+    seq.start()
+
+    seq.join()
+
+    seq.stop()
+    out.stop()

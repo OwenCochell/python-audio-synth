@@ -1443,7 +1443,7 @@ class Sequencer(object):
 
         synth.start()
 
-    def stop_note(self, note, name=None, time_stop=None):
+    def stop_note(self, note, name=None):
 
         """
         Stops a synth at the specified note and name.
@@ -1476,7 +1476,7 @@ class Sequencer(object):
 
         # Stop the synth:
 
-        synth.stop(time=time_stop)
+        synth.stop()
 
         # Remove it from output:
 

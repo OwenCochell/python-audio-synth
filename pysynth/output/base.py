@@ -480,7 +480,7 @@ class OutputHandler:
         Starts the OutputHandler.
 
         This entails starting the output modules we have added,
-        and creating a barrier to ensure all modules are synchronised in getting their values.
+        and creating a barrier to ensure all modules are synchronized in getting their values.
 
         We will start to consume audio information until we are stopped or paused.
         """

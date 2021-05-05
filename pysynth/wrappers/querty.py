@@ -272,7 +272,3 @@ class QWERTYWrapper(Sequencer):
         # Load QWERTYKeyboard:
 
         self.bind_input(QWERTYKeyboard())
-
-        # Create one track:
-
-        self.set_tracks(1)

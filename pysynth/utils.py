@@ -773,11 +773,11 @@ class AudioCollection:
 
             # Compute the value
 
-            final = final + temp
+            final = final + temp * 0.8
 
         # Done, return the result:
 
-        return final * (1 / num_synths if num_synths != 0 else 1)
+        return final
 
 
 class AudioBuffer(deque):
@@ -993,8 +993,6 @@ class AudioValue:
 
                 # Instantiate it:
 
-                print("Creating value")
-
                 self._events[0] = self.start_event(self._events[0])
 
             # Let's see if the time is valid
@@ -1002,8 +1000,6 @@ class AudioValue:
             if get_time() >= self._events[0].time_end > 0.0:
 
                 # Value is done, let's remove it:
-
-                print("Removing value")
 
                 self._value = self._events.pop(0).value_target
 
@@ -1066,6 +1062,19 @@ class AudioValue:
         """
 
         self._events.append((event, target, time_e))
+
+    def cancel_all_events(self):
+
+        """
+        Cancles all events current occuring.
+
+        This will not correct the value fo the event,
+        it will remain as it left off!
+        """
+
+        # Cancel all events:
+
+        self._events.clear()
 
     def linear_ramp(self, target, endtime):
 
@@ -1156,7 +1165,7 @@ class ExponentialRamp(BaseEvent):
 
         # Pre-compute some common values:
 
-        self.val_div = self.value_target / self.value_start
+        self.val_div = self.value_target / self.value_start if self.value_start != 0 else 0.000001
         self.time_dif = self.time_end - self.time_start
 
     def comp(self):

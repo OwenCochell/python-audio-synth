@@ -399,6 +399,8 @@ class MMLDecoder(BaseDecoder):
 
         # Check if we are going up or down an octave:
 
+        # OG: < increased, > decreased
+
         if inp in ['<', '>']:
 
             # Determine if we are going up or down:
