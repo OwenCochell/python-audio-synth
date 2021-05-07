@@ -145,3 +145,23 @@ class ADSREnvelope(BaseAmpEnvelope):
         # Return the input multiplied by the envelope:
 
         return self.get_input() * val
+
+
+class AmpScale(BaseAmpEnvelope):
+
+    """
+    Scales the amplitude based upon the velocity value of the synth chain.
+    """
+
+    def get_next(self):
+
+        """
+        Returns the next value of the synth scaled down to our velocity.
+
+        :return: Next value
+        :rtype: float
+        """
+
+        val = self.get_input() * (1 / self.info.velocity)
+
+        return val

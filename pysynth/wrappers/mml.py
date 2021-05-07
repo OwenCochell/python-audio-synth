@@ -266,6 +266,7 @@ class MMLDecoder(BaseDecoder):
 
         self.octave = 0  # Current octave we are set at
         self.tempo = 120  # Tempo in beats per minute
+        self.velocity = 1
         self.default_length = 4  # Default length to apply when not specified
         self.beats_per_measure = 4  # Number of beats per measure, used to determine lengths of notes
         self.name = None  # Name of the instrument to register
@@ -471,7 +472,7 @@ class MMLDecoder(BaseDecoder):
 
             # Reading a velocity value;
 
-            length = self.read_number()
+            self.velocity = self.read_number()
 
         # Check for a change in default length:
 
@@ -482,6 +483,8 @@ class MMLDecoder(BaseDecoder):
             self.default_length = self.read_length()
 
             return
+
+        # Check for change in velocity:
 
         # Check for change in tempo:
 
@@ -566,7 +569,7 @@ class MMLDecoder(BaseDecoder):
 
         # Add the note to the SeqCommand:
 
-        self.command.note(note_val, time_amount)
+        self.command.note(note_val, time_amount, velocity=self.velocity)
 
     def read_accidental(self):
 

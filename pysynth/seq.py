@@ -522,11 +522,12 @@ class NoteOn(BaseCommand):
     :type name: int, str
     """
 
-    def __init__(self, note, length=0, name=None):
+    def __init__(self, note, length=0, name=None, velocity=1):
 
         super().__init__(name=name, legnth=length)
 
         self.note = note  # Note to turn on
+        self.velocity = velocity  # Velocity of the note
 
     def run(self):
 
@@ -541,7 +542,7 @@ class NoteOn(BaseCommand):
         print("Starting note: {}".format(self.note))
 
         self.seq.start_note(self.note, name=self.name, time_start=self.time_start + self.seq_com.offset, 
-        time_stop=self.time_stop + self.seq_com.offset)
+        time_stop=self.time_stop + self.seq_com.offset, velocity=self.velocity)
 
         return
 
@@ -721,7 +722,7 @@ class SeqCommand:
         self.index = 0  # Event index we are currently on
         self.name = None  #  Name of the synth chain to invoke
 
-    def note(self, num, length, index=-1, name=None):
+    def note(self, num, length, index=-1, name=None, velocity=1):
 
         """
         We schedule a note event with the given note number,
@@ -736,6 +737,9 @@ class SeqCommand:
         Index is the index to insert the event at.
         Be default, the command is appended to the end of the event list,
         but you could place it elsewhere if necessary.
+
+        Velocity os the velocity of the note.
+        This is usually used to determine the volume of the note as it plays.
 
         :param num: Number of the note to play
         :type num: int, Note
@@ -757,7 +761,7 @@ class SeqCommand:
 
         # Create an event:
 
-        self.add_event(NoteOn(num, length, name=name), index)
+        self.add_event(NoteOn(num, length, name=name, velocity=velocity), index)
 
     def rest(self, length, index=-1):
 
@@ -1405,7 +1409,7 @@ class Sequencer(object):
 
             self._synths[name]['d'] = synth
 
-    def start_note(self, note, name=None, time_stop=0, time_start=0):
+    def start_note(self, note, name=None, time_stop=0, time_start=0, velocity=1):
 
         """
         Starts a synth at the specified note and name.
@@ -1421,6 +1425,11 @@ class Sequencer(object):
         parameters, which determine when a note will start and stop.
         If neither of these are specified, then the note will start immediately,
         and will play indefinitely until stopped.
+
+        The velocity of the note can also be specified,
+        which may change the volume or timbre of the waveform,
+        depending on which modules are present in the synth chain.
+        '1.0' is the max value for velocity.
 
         :param note: Note to turn on
         :type note: Note
@@ -1440,6 +1449,10 @@ class Sequencer(object):
             # Schedule a time event:
 
             synth.time_event(time_start, time_stop)
+
+        # Set the velocity:
+
+        synth.info.velocity = velocity
 
         synth.start()
 

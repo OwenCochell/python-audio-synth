@@ -585,6 +585,7 @@ class ModuleInfo:
         self.running = True  # Value determining if we are running
         self.connected = 1  # Number of modules connected to this instance
         self.done = 0  # Number of modules that have reported that they are ready to stop
+        self.velocity = 1  # Velocity of the module
 
 
 class DummyModule(BaseModule):
@@ -773,11 +774,11 @@ class AudioCollection:
 
             # Compute the value
 
-            final = final + temp * 0.8
+            final = final + temp
 
         # Done, return the result:
 
-        return final
+        return final * (1 / num_synths)
 
 
 class AudioBuffer(deque):

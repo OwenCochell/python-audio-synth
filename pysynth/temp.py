@@ -474,10 +474,10 @@ def mml_test():
         "r4 f>c<a>c<a>c< f>c<a>c<a>c< g>c<b->c<b->c< [e>c]2 [f>c]4 [b->d]2.^2 [<b->b-]4 [ca]2[cb-]4 [fa]4 <f4>;" \
 
 
-    song2 = "t120$l8 o4 rr g  g4  g+ a+4  d4  d4  d+2 d  c   g   g4 g+   a+4 d4 d4 d+2 rr g g4 g+ a+4 d4 d4 d+2 d c g g4 g+ a+4 d4 d4 d+2.;" \
-           "t120$l8 o4 rr d+ d+2 r  >a+4 a+4 <c2 >a+ g+ <d+ d+2 r  >a+4 a+4 a+2 rr d+ d+2 r >a+4 a+4 <c2 >a+ g+ <d+ d+2 r >a+4 a+4 a+2.;" \
-           "t120$l8 o4 rr c  c2  r  >f4  f4  g2  a+  g+ <c  c2 >f  f4   r   f g2< rr c c2 r >f4 f4 g2 a+ g+ <c c2 >f f4 r f g2.<;" \
-           "t120$l8 o3 >g+2.. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c4. >d+ a+ g+2. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <r2." \
+    song2 = "t120$l8 o4 v9rr g  g4  g+ a+4  d4  d4  d+2 d  c   g   g4 g+   a+4 d4 d4 d+2 rr g g4 g+ a+4 d4 d4 d+2 d c g g4 g+ a+4 d4 d4 d+2.;" \
+           "t120$l8 o4 v9 rr d+ d+2 r  >a+4 a+4 <c2 >a+ g+ <d+ d+2 r  >a+4 a+4 a+2 rr d+ d+2 r >a+4 a+4 <c2 >a+ g+ <d+ d+2 r >a+4 a+4 a+2.;" \
+           "t120$l8 o4 v9 rr c  c2  r  >f4  f4  g2  a+  g+ <c  c2 >f  f4   r   f g2< rr c c2 r >f4 f4 g2 a+ g+ <c c2 >f f4 r f g2.<;" \
+           "t120$l8 o3 v8 >g+2.. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <c4. >d+ a+ g+2. g+ a+4. a+ <c2 >a+ g+2.. a+4 a+4 <r2." \
 
     #song = 't60 o3 l4 cdefgab<c> l8 cdefgab<c> l16 cdefgab l32 cdefgab'
 
@@ -514,7 +514,7 @@ def mml_test():
     # --== End Other Output Options! ==--
 
     # --== ADSR Options: ==--
-    # COnfigure the parameters for the ADSR envelope:
+    # Configure the parameters for the ADSR envelope:
 
     attack = 10000000
     decay = 100000
@@ -528,6 +528,10 @@ def mml_test():
     #final = env
 
     # --== End ADSR Options! ==--
+
+    amp = AmpScale()
+    amp.bind(final)
+    final = amp
 
     cont = out.bind_synth(final)
 
