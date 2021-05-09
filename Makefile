@@ -12,7 +12,7 @@ ${ALSAROOT}/midi_alsa.o: ${ALSAROOT}/midi_alsa.c
 	${CC} ${CFLAGS} -fPIC -c ${ALSAROOT}/midi_alsa.c -o ${ALSAROOT}/midi_alsa.o
 
 ${ALSAROOT}/midi_alsa.so: ${OBJ}
-	${CC} ${CFLAGS} -shared -o ${ALSAROOT}/midi_alsa.so
+	${CC} ${CFLAGS} -shared -o ${ALSAROOT}/midi_alsa.so ${OBJ}
 
 clean:
 	rm -f ${ALSAROOT}/*.o
