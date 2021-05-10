@@ -9,10 +9,10 @@ OBJ = \
 all: ${OBJ} ${ALSAROOT}/midi_alsa.so
 
 ${ALSAROOT}/midi_alsa.o: ${ALSAROOT}/midi_alsa.c
-	${CC} ${CFLAGS} -fPIC -c ${ALSAROOT}/midi_alsa.c -o ${ALSAROOT}/midi_alsa.o
+	${CC} -fPIC -c ${ALSAROOT}/midi_alsa.c -o ${ALSAROOT}/midi_alsa.o ${CFLAGS}
 
 ${ALSAROOT}/midi_alsa.so: ${OBJ}
-	${CC} ${CFLAGS} -shared -o ${ALSAROOT}/midi_alsa.so ${OBJ}
+	${CC} -shared -o ${ALSAROOT}/midi_alsa.so ${OBJ} ${CFLAGS}
 
 clean:
 	rm -f ${ALSAROOT}/*.o
