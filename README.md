@@ -11,5 +11,12 @@ We expect pyaudio to be installed if the audio is going to be played over the sp
 
 Some parts of this project are written in C code,
 for speed purposes as well as functionality.
-We do not have a central method to build these C files as of now,
-so you will need to find them and build them manually.
+
+You can use make to build the necessary C files.
+To do this, run make in the root directory like so:
+
+>make
+
+To clean unecessary object files:
+
+>make clean
